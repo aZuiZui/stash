@@ -43,6 +43,14 @@ import com.google.android.material.textfield.TextInputLayout
 import java.util.Locale
 
 
+/** stash: options shown (without "advanced") when adding these providers; empty = name only. */
+private val SIMPLE_PROVIDER_OPTIONS = mapOf(
+    // own Google client id/secret: much faster listings than rclone's shared one (blank = shared)
+    "drive" to setOf("client_id", "client_secret"),
+    "terabox" to setOf("cookie"),
+    "smb" to setOf("host", "user", "pass"),   // host = IP (Android can't resolve NAS names)
+)
+
 class DynamicRemoteConfigFragment(private val mProviderTitle: String, private val optionMap: HashMap<String, String>?) : Fragment() {
 
     private val TAG = "DynamicRemoteConfigFragment"
@@ -185,6 +193,30 @@ class DynamicRemoteConfigFragment(private val mProviderTitle: String, private va
             }
         }
 
+        // stash: new Google Drive / TeraBox remotes get a ready name and sensible defaults,
+        // so adding one is: (name) -> sign in.
+        if(!mIsEditTask && mRemoteName?.text.isNullOrBlank()) {
+            when (mProvider?.name) {
+                "drive" -> mRemoteName?.setText("gdrive")
+                "terabox" -> mRemoteName?.setText("terabox")
+                "smb" -> mRemoteName?.setText("nas")
+            }
+        }
+        if(!mIsEditTask && mProvider?.name == "drive" && !mOptionMap.containsKey("scope")) {
+            mOptionMap["scope"] = "drive"
+        }
+        // your own Google client (google.properties, if set) is the default for new Drive remotes
+        if(!mIsEditTask && mProvider?.name == "drive" && !mOptionMap.containsKey("client_id")
+            && ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_ID.isNotBlank()) {
+            mOptionMap["client_id"] = ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_ID
+            mOptionMap["client_secret"] = ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_SECRET
+        }
+        // SMB: the NAS by IP (Android can't resolve local host names); same host as the teldrive DB.
+        if(!mIsEditTask && mProvider?.name == "smb" && !mOptionMap.containsKey("host")
+            && ca.pkay.rcloneexplorer.BuildConfig.TD_DB_HOST.isNotBlank()) {
+            mOptionMap["host"] = ca.pkay.rcloneexplorer.BuildConfig.TD_DB_HOST
+        }
+
         if(mOptionMap.containsKey(RCLONE_CONFIG_NAME_KEY)) {
             mRemoteName?.setText(mOptionMap.getValue(RCLONE_CONFIG_NAME_KEY))
             mRemoteName?.isFocusable = false
@@ -194,6 +226,13 @@ class DynamicRemoteConfigFragment(private val mProviderTitle: String, private va
         mProvider!!.options.forEach {
 
             if(it.advanced && !mShowAdvanced ) {
+                return@forEach
+            }
+
+            // stash: for these providers only the options a normal sign-in needs are
+            // shown; the rest stays under "advanced".
+            val basic = SIMPLE_PROVIDER_OPTIONS[mProvider?.name]
+            if(basic != null && !mShowAdvanced && it.name !in basic) {
                 return@forEach
             }
 
@@ -519,6 +558,13 @@ class DynamicRemoteConfigFragment(private val mProviderTitle: String, private va
                 options.add("config_refresh_token")
                 options.add("false")
             }
+        }
+        // new Drive remotes use the built-in Google client (google.properties) unless one was typed
+        if(!mIsEditTask && mProvider?.name == "drive"
+            && ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_ID.isNotBlank()
+            && mOptionMap["client_id"].isNullOrBlank()) {
+            mOptionMap["client_id"] = ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_ID
+            mOptionMap["client_secret"] = ca.pkay.rcloneexplorer.BuildConfig.TD_GDRIVE_CLIENT_SECRET
         }
         for ((key, value) in mOptionMap) {
             //Log.e("TAG", "key: $key value: $value (${value.length})")

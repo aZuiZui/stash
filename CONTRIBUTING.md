@@ -1,3 +1,19 @@
+# Contributing to Stash
+
+Forks and pull requests are welcome. Report Stash bugs at <https://github.com/aZuiZui/stash/issues>,
+not in Round Sync's tracker: Round Sync's maintainers don't support Stash.
+
+**teldrive version.** Stash bundles teldrive 1.8.x. The move to teldrive 2.x happens when the maintainer
+is ready; pull requests that switch Stash to 2.x won't be merged before then. Fixes and features for
+1.8.x are welcome, and so are forks that go to 2.x on their own.
+
+Please keep the credits and licence notices (`THIRD_PARTY_NOTICES.md`, About > Libraries and Credits,
+the editor's About dialog) when you change or redistribute Stash.
+
+The guide below is Round Sync's and still applies to the shared code.
+
+---
+
 # Contributing to Round Sync
 
 We welcome any contribution to Round Sync, and there are multiple ways to contribute:

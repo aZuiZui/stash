@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Round Sync</string>
+    <string name="app_name">Stash</string>
     <string name="app_description">Android için Rclone</string>
-    <string name="app_short_name">Round Sync</string>
+    <string name="app_short_name">Stash</string>
 
     <string name="title_activity_about">Hakkında</string>
     <string name="title_activity_changelog">Değişiklik Günlüğü</string>

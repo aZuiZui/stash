@@ -1,83 +1,68 @@
-# Round Sync - Rclone for Android
-[![license: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/gulp79/Round-Sync/blob/master/LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/gulp79/Round-Sync?include_prereleases)](https://github.com/gulp79/Round-Sync/releases/latest)
-![Downloads](https://img.shields.io/github/downloads/gulp79/Round-Sync/total)  ![Latest Downloads](https://img.shields.io/github/downloads/gulp79/Round-Sync/latest/total)
+# Stash
 
+[![license: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-> ⚠️ **Unofficial Fork Disclaimer**  
-> This is an **unofficial fork** of [Round Sync - Rclone for Android](https://github.com/newhinton/Round-Sync), with additional enhancements such as **Alist**, **Alldebrid**, **iCloud Photos**, **Teldrive** and **Terabox** support. 
-> All the backends are from [rclone-extra](https://github.com/gulp79/rclone-extra).
-> I am **not affiliated with the upstream maintainers**, and this fork **does not intend to be malicious or harmful** in any way.  
-> Please **read the source code** if you're unsure or want to verify that it behaves as described.  
-> Contributions, feedback, and scrutiny are welcome.
+**Stash**: all your clouds in one place. An Android file manager for [teldrive](https://github.com/tgdrive/teldrive)
+(Telegram storage) plus Google Drive, TeraBox, SMB (NAS) and phone storage, powered by rclone.
 
-A cloud file manager, powered by rclone.
-Visit [https://roundsync.com](https://roundsync.com) for more information!
-
-
-## Screenshots
-<table>
-  <tr style="border:none">
-    <td style="border:none">
-      <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="360vh" />
-    </td>
-    <td style="border:none">
-      <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="360vh" />
-    </td>
-    <td style="border:none">
-      <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="360vh" />
-    </td>
-  </tr>
-</table>
-
+> **Fork notice.** Stash is a modified version of [Round Sync](https://github.com/newhinton/Round-Sync)
+> by Felix Nüsse, by way of [gulp79's rclone-extra fork](https://github.com/gulp79/Round-Sync). It has its own
+> name, icon and package id (`io.github.azuizui.stash`), as Round Sync asks of forks. It is **not affiliated with or
+> endorsed by** the Round Sync, rclone, teldrive, ONLYOFFICE or PDF.js projects. Full credits and licences:
+> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Features
-|                                                            Cloud Access                                                             |                                    256 Bit Encryption<sup>[1](https://rclone.org/crypt/#file-encryption)</sup>                                     |                                                         Integrated Experience                                                         |
-|:-----------------------------------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------:|
-| <img src="https://github.com/gulp79/Round-Sync/blob/master/docs/cloud-computing.png?raw=true" alt="Cloud Access" width="144" />  | <img src="https://github.com/gulp79/Round-Sync/blob/master/docs/locked-padlock.png?raw=true" alt="256 Bit End-to-End Encryption" width="108" /> | <img src="https://github.com/gulp79/Round-Sync/blob/master/docs/smartphone.png?raw=true" alt="Integrated Experience" width="132"/> |
-|                                             Use your cloud storage like a local folder.                                             |                                         Keep your files private on any cloud provider with crypt remotes.                                          |                                  Don't give up features or comfort just because it runs on a phone.                                   |
 
-- **File Management** (list, view, download, upload, move, rename, delete files and folders)
-- **Streaming** (Stream media files, serve files and directories over FTP, HTTP, WebDAV or DLNA)
-- **Integration** (Access local storage devices and share files with the application to store them on a remote)
-- **Many cloud storage providers** (all via rclone config import, some without ui-setup)
-- **Material 3 Design** (Dark theme)
-- **All architectures** (runs on ARM, ARM64, x86 and x64 devices, Android 7+)
-- **Storage Access Framework (SAF)** ([see docs](https://roundsync.com/usage/saf.html)) for SD card and USB device access.
-- **Intentservice** to start tasks via third party apps!
-- **Task Management** to allow regular runs of your important tasks!
-
+- Bundled teldrive server and rclone; one `teldrive` remote, with folder-to-channel mappings for uploads.
+- Remotes: teldrive, Google Drive, TeraBox, SMB, phone storage, with simplified sign-in forms.
+- Send to… any other remote, cut / copy / paste across remotes, tabs, and pinning folders and files to the drawer.
+- Built-in viewer: video and audio, images, PDF, text editor, Word and spreadsheet preview.
+- Edit Word, Excel and PowerPoint files offline with the ONLYOFFICE mobile editors (modified, AGPL-3.0).
+- Fill in, sign and mark up PDFs with PDF.js.
+- Edits are uploaded back to the cloud, and Google Docs/Sheets/Slides are saved in place.
 
 ## Installation
 
-Grab the [latest version](https://github.com/gulp79/Round-Sync/releases/latest) of the signed APK and install it on your phone.
-| CPU architecture | Where to find | APK identifier |
-|:---|:--|:---:|
-|ARM 32 Bit | older devices | ```armeabi-v7a``` |
-|**ARM 64 Bit** | **most devices** | ```arm64-v8a``` |
-|Intel/AMD 32 Bit | some TV boxes and tablets | ```x86``` |
-|Intel/AMD 64 Bit | some emulators | ```x86_64``` |
+Download the APK from [Releases](https://github.com/aZuiZui/stash/releases) (arm64-v8a, Android 15+).
 
-If you don't know which version to pick use ```roundsync-<version>-universal-release.apk```. Most devices run ARM 64 Bit, and 64 Bit devices often can also run the respective 32 bit version at lower performance. The app runs on any phone, tablet or TV with Android 7 or newer, as long as you have a touchscreen or mouse.
+The release APK has **no built-in teldrive settings**: the Telegram app id/hash, JWT secret, uploads encryption
+key and Google OAuth client are not part of this repository. To use teldrive, build Stash yourself with your
+own `teldrive.properties` (see [STASH.md](STASH.md)).
 
-## Usage
-[See the documentation](https://roundsync.com/).
+## Building
 
+See [STASH.md](STASH.md). In short: JDK 21, Android SDK + NDK 27.3.13750724, Go ≥ 1.26, then
+`./gradlew assembleOssRelease`. The teldrive server and rclone are built from source by the `:teldrive` and
+`:rclone` modules from the public upstream repositories at pinned tags (teldrive `1.8.3`, rclone-extra
+`v1.75.2-extra`), with Stash's changes applied from `teldrive/patches/` and `rclone/patches/`.
 
-## Intents
-This app includes the ability to launch an intent! Create a task to sync to a remote, and copy it's id (via the treedot-menu)
-The intent needs the following:
+## Versions and teldrive 2.x
 
-| Intent          |                   Content                   |                 |
-|:----------------|:-------------------------------------------:|----------------:|
-| packageName     |           de.felixnuesse.extract            |                 |
-| className       | ca.pkay.rcloneexplorer.Services.SyncService |                 |
-| Action          |                 START_TASK                  |                 |
-| Integer Extra   |                    task                     |        idOfTask |
-| Boolean Extra   |                notification                 |   true or false |
+Stash 1.2.0 bundles **teldrive 1.8.3** (plus patches) and **rclone-extra v1.75.2-extra** (plus one fix);
+exact versions and patches are in [STASH.md](STASH.md#bundled-versions-120). It works with teldrive servers and databases
+on 1.8.x. **Teldrive 2.x is not supported yet.** Stash will move to it when the maintainer is ready, and using
+2.x needs a recompiled Stash.
 
+## Contributing
 
-## Libraries
+Forks and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Until the move to teldrive 2.x,
+pull requests that switch Stash to 2.x won't be merged. Forks that go to 2.x on their own are fine.
+
+## Credits
+
+- [rcloneExplorer](https://github.com/patrykcoding/rcloneExplorer) by **Patryk Kaczmarkiewicz**: the original app.
+- [RCX](https://github.com/x0b/rcx) by **x0b**.
+- [Round Sync](https://github.com/newhinton/Round-Sync) by **Felix Nüsse** and contributors.
+- [Round-Sync (rclone-extra fork)](https://github.com/gulp79/Round-Sync) and [rclone-extra](https://github.com/gulp79/rclone-extra) by **gulp79**.
+- [rclone](https://github.com/rclone/rclone) by **Nick Craig-Wood** and contributors. See https://rclone.org/donate/.
+- [teldrive](https://github.com/tgdrive/teldrive) and [teldrive-ui](https://github.com/tgdrive/teldrive-ui) by **divyam234 / tgdrive**.
+  Stash's teldrive patch includes [tgdrive/teldrive#584](https://github.com/tgdrive/teldrive/pull/584) by **Jaime Linares**.
+- ONLYOFFICE editors by **Ascensio System SIA**, packaged for the browser by [**wasmtools/office-web**](https://github.com/wasmtools/office-web).
+- [PDF.js](https://github.com/mozilla/pdf.js) by **Mozilla**; [docx-preview](https://github.com/VolodymyrBaydalka/docxjs), [SheetJS](https://sheetjs.com), [JSZip](https://github.com/Stuk/jszip).
+
+Every upstream commit keeps its original author in this repository's history.
+
+## Libraries (inherited from Round Sync)
 - [rclone](https://github.com/rclone/rclone) - Calling this a library is an understatement. Without rclone, there would not be Round Sync. See https://rclone.org/donate/ to support rclone.
 - [Jetpack AndroidX](https://developer.android.com/license)
 - [Floating Action Button SpeedDial](https://github.com/leinardi/FloatingActionButtonSpeedDial) - A Floating Action Button Speed Dial implementation for Android that follows the Material Design specification.
@@ -89,38 +74,13 @@ The intent needs the following:
 - Icons from [Flaticon](https://www.flaticon.com) courtesy of [Smashicons](https://www.flaticon.com/authors/smashicons) and [Freepik](https://www.flaticon.com/authors/freepik)
 
 
-## Contributing
-See [CONTRIBUTING](./CONTRIBUTING.md)
-
-Anyone is welcome to contribute and help out. However, hate, discrimination and racism are decidedly unwelcome here. If you feel offended by this, you might belong to the group of people who are not welcome. I will not tolerate hate in any way.
-
-If you want to add more translations, see our [weblate-project](https://hosted.weblate.org/projects/round-sync/round-sync/)!
-
-## Developing
-
-You should first make sure you have:
-
-- Go 1.20+ installed and in your PATH
-- Java installed and in your PATH
-- Android SDK command-line tools installed OR the NDK version specified in `gradle.properties`
-  installed
-
-You can then build the app normally from Android Studio or from CLI by running:
-
-```sh
-# Debug build
-./gradlew assembleOssDebug
-
-# or release build
-./gradlew assembleOssRelease
-```
-
-
 ## License
-This app is released under the terms of the [GPLv3 license](https://github.com/newhinton/extract/blob/master/LICENSE). Community contributions are licensed under the MIT license, and [CLA Assistant](https://cla-assistant.io/) will ask you to confirm [a CLA stating that](https://gist.githubusercontent.com/x0b/889f037d76706fc9e3ab8ee1c047841b/raw/67c028b19e33111428904558cfda0c01039d1574/rcloneExplorer-cla-202001) if create a PR.
-
+Stash is released under the terms of the [GPLv3 license](LICENSE), like Round Sync. Bundled components keep
+their own licences (MIT, Apache-2.0, AGPL-3.0); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Contributions to Round Sync were licensed under the MIT license via a
+[CLA](https://gist.githubusercontent.com/x0b/889f037d76706fc9e3ab8ee1c047841b/raw/67c028b19e33111428904558cfda0c01039d1574/rcloneExplorer-cla-202001).
 
 ## About this app
-This is a fork of [**RCX**](https://github.com/x0b/rcx) by **x0b**<sup>[x0b](https://github.com/x0b)</sup> which is itself a fork of [**rcloneExplorer**](https://github.com/patrykcoding/rcloneExplorer) by **Patryk Kaczmarkiewicz**<sup>[patrykcoding](https://github.com/patrykcoding)</sup> .
+Round Sync is a fork of [**RCX**](https://github.com/x0b/rcx) by **x0b**<sup>[x0b](https://github.com/x0b)</sup> which is itself a fork of [**rcloneExplorer**](https://github.com/patrykcoding/rcloneExplorer) by **Patryk Kaczmarkiewicz**<sup>[patrykcoding](https://github.com/patrykcoding)</sup> .
 
 If you want to convey a modified version (fork), we ask you to use a different name, app icon and package id as well as proper attribution to avoid user confusion.

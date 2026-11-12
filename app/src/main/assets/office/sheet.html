@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!-- Stash viewer: renders the spreadsheet served at /file with SheetJS (Apache-2.0). -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=5">
+<style>
+  /* Google Sheets look: letters and row numbers that stay put, light grid, sheet pills at the bottom */
+  html, body { margin: 0; background: #fff; font: 13px Roboto, Arial, sans-serif; color: #1F1F1F; }
+  #sheet { padding-bottom: 64px; }
+  table { border-collapse: separate; border-spacing: 0; }
+  td { border-right: 1px solid #E1E3E1; border-bottom: 1px solid #E1E3E1; padding: 4px 6px;
+       white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  th { background: #F8F9FA; color: #444746; font-weight: 400; font-size: 12px;
+       border-right: 1px solid #C4C7C5; border-bottom: 1px solid #C4C7C5; padding: 3px 6px; }
+  thead th { position: sticky; top: 0; z-index: 2; text-align: center; }
+  tbody th { position: sticky; left: 0; z-index: 1; text-align: center; min-width: 32px; }
+  thead th.corner { left: 0; z-index: 3; }
+  #tabs { position: fixed; left: 0; right: 0; bottom: 0; display: flex; overflow-x: auto;
+          background: #F0F4F9; padding: 8px; gap: 8px; }
+  #tabs button { flex: none; border: 0; border-radius: 18px; padding: 9px 16px; background: transparent;
+                 color: #444746; font: 500 14px Roboto, sans-serif; }
+  #tabs button.on { background: #C2E7FF; color: #001D35; }
+  #msg { color: #5F6368; font: 18px Roboto, sans-serif; text-align: center; margin-top: 40vh; }
+</style>
+<script src="xlsx.full.min.js"></script>
+</head>
+<body>
+<div id="msg">Opening…</div>
+<div id="sheet"></div>
+<div id="tabs"></div>
+<script>
+  var book;
+  function letters(c) { var s = ''; for (c++; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + (c - 1) % 26) + s; return s; }
+  function show(name) {
+    var ws = book.Sheets[name];
+    var box = document.getElementById('sheet');
+    box.innerHTML = XLSX.utils.sheet_to_html(ws, { header: '', footer: '' });
+    // column letters and row numbers, like Google Sheets
+    var table = box.querySelector('table');
+    if (table && ws['!ref']) {
+      var r = XLSX.utils.decode_range(ws['!ref']);
+      var head = document.createElement('thead'), tr = document.createElement('tr');
+      var corner = document.createElement('th'); corner.className = 'corner'; tr.appendChild(corner);
+      for (var c = r.s.c; c <= r.e.c; c++) { var th = document.createElement('th'); th.textContent = letters(c); tr.appendChild(th); }
+      head.appendChild(tr);
+      table.insertBefore(head, table.firstChild);
+      var rows = table.querySelectorAll('tbody tr, :scope > tr');
+      for (var i = 0; i < rows.length; i++) {
+        var n = document.createElement('th'); n.textContent = r.s.r + i + 1; rows[i].insertBefore(n, rows[i].firstChild);
+      }
+    }
+    var buttons = document.querySelectorAll('#tabs button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].className = buttons[i].textContent === name ? 'on' : '';
+    }
+    window.scrollTo(0, 0);
+  }
+  fetch('file')
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+    .then(function (data) {
+      book = XLSX.read(data, { type: 'array', cellDates: true });
+      var tabs = document.getElementById('tabs');
+      book.SheetNames.forEach(function (name) {
+        var b = document.createElement('button');
+        b.textContent = name;
+        b.onclick = function () { show(name); };
+        tabs.appendChild(b);
+      });
+      document.getElementById('msg').remove();
+      show(book.SheetNames[0]);
+    })
+    .catch(function (e) {
+      document.getElementById('msg').textContent = "Couldn't open this spreadsheet (" + e.message + ")";
+    });
+</script>
+</body>
+</html>

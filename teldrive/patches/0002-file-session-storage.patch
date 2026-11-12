@@ -1,0 +1,122 @@
+diff --git a/internal/tgstorage/file.go b/internal/tgstorage/file.go
+new file mode 100644
+index 0000000..549580a
+--- /dev/null
++++ b/internal/tgstorage/file.go
+@@ -0,0 +1,103 @@
++package tgstorage
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++	"sync"
++
++	"github.com/gotd/td/session"
++)
++
++var _ Storage = (*FileStorage)(nil)
++
++// FileStorage keeps Telegram sessions in one small JSON file: map[key]session, held in memory
++// and rewritten atomically (temp file + rename) on every store. Used by the Android build, where
++// bbolt kept corrupting its file ("page already freed") under concurrent bot clients. A torn or
++// unreadable file is treated as empty, so the worst case is the bots logging in again.
++type FileStorage struct {
++	store *fileStore
++	key   string
++}
++
++type fileStore struct {
++	mu   sync.Mutex
++	path string
++	data map[string][]byte
++}
++
++var (
++	fileStoresMu sync.Mutex
++	fileStores   = map[string]*fileStore{}
++)
++
++func openFileStore(path string) *fileStore {
++	fileStoresMu.Lock()
++	defer fileStoresMu.Unlock()
++	if s, ok := fileStores[path]; ok {
++		return s
++	}
++	s := &fileStore{path: path, data: map[string][]byte{}}
++	if raw, err := os.ReadFile(path); err == nil {
++		_ = json.Unmarshal(raw, &s.data) // corrupt -> start empty
++		if s.data == nil {
++			s.data = map[string][]byte{}
++		}
++	}
++	fileStores[path] = s
++	return s
++}
++
++// NewFileStorage creates a session storage backed by the JSON file at path.
++func NewFileStorage(path, key string) (*FileStorage, error) {
++	if path == "" {
++		return nil, fmt.Errorf("file session storage: path is required")
++	}
++	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
++		return nil, err
++	}
++	return &FileStorage{store: openFileStore(path), key: key}, nil
++}
++
++func (s *FileStorage) LoadSession(ctx context.Context) ([]byte, error) {
++	s.store.mu.Lock()
++	defer s.store.mu.Unlock()
++	v, ok := s.store.data[s.key]
++	if !ok || len(v) == 0 {
++		return nil, session.ErrNotFound
++	}
++	return append([]byte(nil), v...), nil
++}
++
++func (s *FileStorage) StoreSession(ctx context.Context, data []byte) error {
++	st := s.store
++	st.mu.Lock()
++	defer st.mu.Unlock()
++	st.data[s.key] = append([]byte(nil), data...)
++	raw, err := json.Marshal(st.data)
++	if err != nil {
++		return err
++	}
++	tmp := st.path + ".tmp"
++	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
++	if err != nil {
++		return err
++	}
++	if _, err = f.Write(raw); err == nil {
++		err = f.Sync()
++	}
++	if cerr := f.Close(); err == nil {
++		err = cerr
++	}
++	if err != nil {
++		_ = os.Remove(tmp)
++		return err
++	}
++	return os.Rename(tmp, st.path)
++}
++
++func (s *FileStorage) Type() string { return "file" }
++
++func (s *FileStorage) Close() error { return nil }
+diff --git a/internal/tgstorage/storage.go b/internal/tgstorage/storage.go
+index e010cb9..fd4b933 100644
+--- a/internal/tgstorage/storage.go
++++ b/internal/tgstorage/storage.go
+@@ -26,6 +26,8 @@ type Storage interface {
+ // cache is used for PostgreSQL storage to reduce DB reads
+ func NewSessionStorage(cfg config.SessionStorageConfig, db *gorm.DB, cache cache.Cacher, key string) (Storage, error) {
+ 	switch cfg.Type {
++	case "file":
++		return NewFileStorage(cfg.Bolt.Path, key)
+ 	case "bolt":
+ 		return NewBoltStorage(cfg.Bolt, key)
+ 	case "postgres", "postgresql", "pg":

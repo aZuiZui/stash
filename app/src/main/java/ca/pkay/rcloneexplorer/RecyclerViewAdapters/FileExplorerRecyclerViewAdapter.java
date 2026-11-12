@@ -98,8 +98,10 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
             holder.fileIcon.setVisibility(View.VISIBLE);
             holder.dirIcon.setVisibility(View.GONE);
             holder.fileSize.setText(item.getHumanReadableSize());
-            holder.fileSize.setVisibility(View.VISIBLE);
-            holder.interpunct.setVisibility(View.VISIBLE);
+            // Google Docs/Sheets/Slides have no size (-1): show just the date
+            int sizeVisibility = item.getSize() < 0 ? View.GONE : View.VISIBLE;
+            holder.fileSize.setVisibility(sizeVisibility);
+            holder.interpunct.setVisibility(sizeVisibility);
         }
 
         if (showThumbnails && !item.isDir()) {
@@ -144,15 +146,7 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
         
         holder.fileName.setText(item.getName());
 
-        if (isInSelectMode) {
-            if (selectedItems.contains(item)) {
-                holder.view.setBackgroundColor(getSelectionBackgroundColor());
-            } else {
-                holder.view.setBackgroundColor(Color.TRANSPARENT);
-            }
-        } else {
-            holder.view.setBackgroundColor(Color.TRANSPARENT);
-        }
+        showSelected(holder, isInSelectMode && selectedItems.contains(item));
 
         if (isInMoveMode) {
             if (item.isDir()) {
@@ -430,6 +424,14 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
         this.canSelect = canSelect;
     }
 
+    /** A light tint and a tick over the icon, like Google Drive. */
+    private void showSelected(ViewHolder holder, boolean selected) {
+        holder.view.setBackgroundColor(selected ? getSelectionBackgroundColor() : Color.TRANSPARENT);
+        if (holder.selectedIcon != null) {
+            holder.selectedIcon.setVisibility(selected ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private int getSelectionBackgroundColor() {
         return context.getColor(R.color.selectedItem);
     }
@@ -437,7 +439,7 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
     private void onLongClickAction(FileItem item, ViewHolder holder) {
         if (selectedItems.contains(item)) {
             selectedItems.remove(item);
-            holder.view.setBackgroundColor(Color.TRANSPARENT);
+            showSelected(holder, false);
             if (selectedItems.size() == 0) {
                 isInSelectMode = false;
                 listener.onFileDeselected();
@@ -446,7 +448,7 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
         } else {
             selectedItems.add(item);
             isInSelectMode = true;
-            holder.view.setBackgroundColor(getSelectionBackgroundColor());
+            showSelected(holder, true);
             listener.onFilesSelected();
         }
         notifyDataSetChanged();
@@ -458,6 +460,7 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
         public final View icons;
         public final ImageView fileIcon;
         public final ImageView dirIcon;
+        public final ImageView selectedIcon;
         public final TextView fileName;
         public final TextView fileModTime;
         public final TextView fileSize;
@@ -471,6 +474,11 @@ public class FileExplorerRecyclerViewAdapter extends RecyclerView.Adapter<FileEx
             this.icons = view.findViewById(R.id.icons);
             this.fileIcon = view.findViewById(R.id.file_icon);
             this.dirIcon = view.findViewById(R.id.dir_icon);
+            this.selectedIcon = view.findViewById(R.id.selected_icon);
+            if (this.selectedIcon != null) {
+                // the row style tints every icon in the text colour; the tick keeps its own blue and white
+                this.selectedIcon.setImageTintList(null);
+            }
             this.fileName = view.findViewById(R.id.file_name);
             this.fileModTime = view.findViewById(R.id.file_modtime);
             this.fileSize = view.findViewById(R.id.file_size);

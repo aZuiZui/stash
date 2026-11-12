@@ -510,6 +510,9 @@ public class RcloneRcd {
     }
 
     public void copy(String srcFs, String dstFs, JobStatusHandler handler) {
+        if (!srcFs.startsWith(io.github.azuizui.stash.TeldriveRemotes.ROOT)) {
+            dstFs = io.github.azuizui.stash.ChannelFolders.INSTANCE.rewriteFs(context, dstFs);
+        }
         JobIdResponse response = performRcCall("sync/copy", new CopyRcOpParam(srcFs, dstFs), JobIdResponse.class);
         jobsHandlers.append(response.jobid, handler);
         pendingJobs.add(response.jobid);
@@ -520,6 +523,9 @@ public class RcloneRcd {
         String dstFs = remoteNameAsFs(dstRemoteName);
         srcPath = pathAsPath(srcRemoteName, srcPath);
         dstPath = pathAsPath(dstRemoteName, dstPath);
+        if (!srcFs.startsWith(io.github.azuizui.stash.TeldriveRemotes.ROOT)) {
+            dstFs = io.github.azuizui.stash.ChannelFolders.INSTANCE.fsForUpload(context, dstFs, dstPath);
+        }
         JobIdResponse response = performRcCall("operations/copyfile", new CopyFileRcOpParam(srcPath, srcFs, dstPath, dstFs), JobIdResponse.class);
         jobsHandlers.append(response.jobid, handler);
         pendingJobs.add(response.jobid);

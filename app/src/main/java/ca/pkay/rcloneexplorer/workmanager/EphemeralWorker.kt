@@ -51,7 +51,14 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
         const val DOWNLOAD_SOURCE = "DOWNLOAD_SOURCE"
 
         const val UPLOAD_FILE = "UPLOAD_FILE"
+        const val UPLOAD_IMPORT_DOCS = "UPLOAD_IMPORT_DOCS"     // stash: replace a Google Doc/Sheet/Slides in place
+        const val UPLOAD_EXPLICIT_SAVE = "UPLOAD_EXPLICIT_SAVE" // stash: a save from the viewer, never skipped
         const val UPLOAD_TARGETPATH = "UPLOAD_TARGETPATH"
+        const val UPLOAD_SOURCE_SPEC = "UPLOAD_SOURCE_SPEC"     // "Send to": rclone source path
+        const val UPLOAD_SOURCE_IS_DIR = "UPLOAD_SOURCE_IS_DIR"
+        const val UPLOAD_IS_MOVE = "UPLOAD_IS_MOVE"                 // cut and paste across remotes
+        const val UPLOAD_SOURCE_REMOTE = "UPLOAD_SOURCE_REMOTE"
+        const val UPLOAD_SOURCE_PARENT = "UPLOAD_SOURCE_PARENT"
 
         const val MOVE_FILE = "MOVE_FILE"
         const val MOVE_TARGETPATH = "MOVE_TARGETPATH"
@@ -70,7 +77,7 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
     private val mPreferences = PreferenceManager.getDefaultSharedPreferences(mContext)
 
 
-    private var log2File: Log2File? = null
+    private val log2File: Log2File? = Log2File(mContext)  // stash: was never created; only used when logging is on
 
 
     // States
@@ -133,11 +140,19 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
                     Type.UPLOAD -> {
                         val target = inputData.getString(UPLOAD_TARGETPATH)
                         val file = inputData.getString(UPLOAD_FILE)
+                        if (sIsLoggingEnabled) log2File?.log("upload ${remoteItem.name}: $file -> $target")
 
-                        sRcloneProcess = Rclone(mContext).uploadFile(
+                        val spec = inputData.getString(UPLOAD_SOURCE_SPEC)
+                        sRcloneProcess = if (spec != null) {
+                            Rclone(mContext).copyTo(remoteItem, target, spec,
+                                inputData.getBoolean(UPLOAD_SOURCE_IS_DIR, false),
+                                inputData.getBoolean(UPLOAD_IS_MOVE, false))
+                        } else Rclone(mContext).uploadFile(
                             remoteItem,
                             target,
-                            file
+                            file,
+                            inputData.getBoolean(UPLOAD_IMPORT_DOCS, false),
+                            inputData.getBoolean(UPLOAD_EXPLICIT_SAVE, false)
                         )
                     }
                     Type.MOVE -> {
@@ -171,11 +186,32 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
                 }
                 handleSync(mTitle)
 
+                // A failed rclone run must not be reported as a success.
+                val succeeded = try {
+                    sRcloneProcess?.exitValue() == 0
+                } catch (e: IllegalThreadStateException) {
+                    false
+                }
+                if (!succeeded && failureReason == FAILURE_REASON.NO_FAILURE) {
+                    failureReason = FAILURE_REASON.RCLONE_ERROR
+                }
+
                 // Notify the UI that the file operation is complete so it can refresh the file list
                 when(type){
                     Type.UPLOAD -> {
                         // Broadcast the target directory path so the file explorer refreshes it
                         sendFinishedBroadcast(remoteItem.name, inputData.getString(UPLOAD_TARGETPATH))
+                        if (inputData.getBoolean(UPLOAD_IS_MOVE, false)) {
+                            val spec = inputData.getString(UPLOAD_SOURCE_SPEC)
+                            // rclone move leaves the (now empty) top folder of a moved folder behind
+                            if (succeeded && spec != null && inputData.getBoolean(UPLOAD_SOURCE_IS_DIR, false)) {
+                                Rclone(mContext).rmdir(spec)
+                            }
+                            val sourceRemote = inputData.getString(UPLOAD_SOURCE_REMOTE)
+                            if (sourceRemote != null) {
+                                sendFinishedBroadcast(sourceRemote, inputData.getString(UPLOAD_SOURCE_PARENT))
+                            }
+                        }
                     }
                     Type.DELETE -> {
                         // Broadcast the directory where the file was deleted from
@@ -201,7 +237,8 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
 
             postSync()
             // Indicate whether the work finished successfully with the Result
-            return Result.success()
+            // (stash: the viewer watches uploads of edited files through this state)
+            return if (failureReason == FAILURE_REASON.NO_FAILURE) Result.success() else Result.failure()
         }
         log("Critical: No valid ephemeral type passed!")
         return Result.failure()
@@ -224,7 +261,7 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
     fun prepareNotificationManager(type: Type): WorkerNotification {
         return when(type){
             Type.DOWNLOAD -> DownloadWorkerNotification(mContext)
-            Type.UPLOAD -> UploadWorkerNotification(mContext)
+            Type.UPLOAD -> if (inputData.getBoolean(UPLOAD_IS_MOVE, false)) MoveWorkerNotification(mContext) else UploadWorkerNotification(mContext)
             Type.DELETE -> DeleteWorkerNotification(mContext)
             Type.MOVE -> MoveWorkerNotification(mContext)
         }
@@ -241,6 +278,11 @@ class EphemeralWorker (private var mContext: Context, workerParams: WorkerParame
                     try {
                         val logline = JSONObject(line)
                         //todo: migrate this to StatusObject, so that we can handle everything properly.
+                        // stash: with logging on, keep rclone's messages too ("Copied (replaced
+                        // existing)", "Unchanged skipping", ...), not only errors; skip stats lines
+                        if (sIsLoggingEnabled && !logline.has("stats") && logline.getString("level") != "error") {
+                            log2File?.log(line)
+                        }
                         if (logline.getString("level") == "error") {
                             if (sIsLoggingEnabled) {
                                 log2File?.log(line)

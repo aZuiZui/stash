@@ -1,0 +1,53 @@
+// stash: bundles Mozilla PDF.js (Apache-2.0) into the APK as app/src/main/assets/pdfjs/, used by
+// io.github.azuizui.stash.OfficeEditorActivity to fill in, sign and mark up PDFs offline.
+//
+// The release zip is downloaded once into pdfjs/cache (checked against its SHA-256), then bundle.py
+// copies a trimmed copy (no source maps, debugger, sample PDF or other languages) and adds Stash's
+// own files from pdfjs/stash/. Both cache/ and the generated assets are git-ignored.
+//
+// Properties (gradle.properties or -P): pdfjs.version, pdfjs.sha256 (update both together, then re-test)
+
+import java.nio.file.Paths
+import java.security.MessageDigest
+
+ext {
+    PDFJS_VERSION = project.findProperty('pdfjs.version') ?: '6.5.438'
+    PDFJS_SHA256 = project.findProperty('pdfjs.sha256') ?: 'fcbe9ba21d9911843e3502adc178a7f549a524a4055f887bedc942e5490c6ba1'
+    ZIP = Paths.get(projectDir.absolutePath, 'cache', "pdfjs-${PDFJS_VERSION}-dist.zip").toFile()
+    OUT_DIR = Paths.get(projectDir.absolutePath, '..', 'app', 'src', 'main', 'assets', 'pdfjs').toFile()
+}
+
+static String sha256(File f) {
+    def md = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { s -> byte[] b = new byte[65536]; int n; while ((n = s.read(b)) > 0) md.update(b, 0, n) }
+    return md.digest().collect { String.format('%02x', it) }.join()
+}
+
+task downloadPdfjs {
+    doLast {
+        if (!ZIP.exists() || sha256(ZIP) != PDFJS_SHA256) {
+            ZIP.parentFile.mkdirs()
+            def url = "https://github.com/mozilla/pdf.js/releases/download/v${PDFJS_VERSION}/pdfjs-${PDFJS_VERSION}-dist.zip"
+            println ">>> downloading ${url}"
+            def tmp = new File(ZIP.path + '.part')
+            new URL(url).withInputStream { i -> tmp.withOutputStream { o -> o << i } }
+            def got = sha256(tmp)
+            if (got != PDFJS_SHA256) { tmp.delete(); throw new GradleException("pdf.js zip checksum mismatch: ${got}") }
+            tmp.renameTo(ZIP)
+        }
+        println ">>> pdf.js ${PDFJS_VERSION}"
+    }
+}
+
+task buildAll(dependsOn: downloadPdfjs) {
+    inputs.dir(new File(projectDir, 'stash'))
+    inputs.file(new File(projectDir, 'bundle.py'))
+    inputs.property('version', PDFJS_VERSION)
+    outputs.dir(OUT_DIR)
+    doLast {
+        exec {
+            commandLine 'python3', '-I', new File(projectDir, 'bundle.py').absolutePath,
+                ZIP.absolutePath, new File(projectDir, 'stash').absolutePath, OUT_DIR.absolutePath
+        }
+    }
+}

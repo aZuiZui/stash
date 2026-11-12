@@ -13,14 +13,21 @@
             android:title="@string/remotes" />
         <item
             android:id="@+id/nav_tasks"
+        android:visible="false"
             android:icon="@drawable/ic_round_swap_vert_24"
             android:title="@string/tasks" />
         <item
             android:id="@+id/nav_trigger"
+        android:visible="false"
             android:icon="@drawable/ic_round_av_timer_24"
             android:title="@string/trigger" />
         <item
+            android:id="@+id/nav_channel_folders"
+            android:icon="@drawable/ic_folder"
+            android:title="Channel folders" />
+        <item
             android:id="@+id/nav_logs"
+        android:visible="false"
             android:icon="@drawable/ic_round_list_24"
             android:title="@string/logFragment" />
         <item
@@ -57,11 +64,13 @@
                 android:title="@string/settings">
                 <item
                     android:id="@+id/nav_import"
+        android:visible="false"
                     android:icon="@drawable/ic_import"
                     android:title="@string/import_rclone_config" />
 
                 <item
                     android:id="@+id/nav_export"
+        android:visible="false"
                     android:icon="@drawable/ic_export"
                     android:title="@string/export_rclone_config" />
 

@@ -72,3 +72,16 @@ debug/
 .idea/codeStyles/codeStyleConfig.xml
 .idea/inspectionProfiles/Project_Default.xml
 .idea/
+
+# stash: baked secrets + build caches
+teldrive.properties
+teldrive-config/
+google.properties
+teldrive/cache/
+rclone/cache/
+onlyoffice/cache/
+app/src/main/assets/onlyoffice/
+pdfjs/cache/
+app/src/main/assets/pdfjs/
+rclone/gopath_env/
+local.properties

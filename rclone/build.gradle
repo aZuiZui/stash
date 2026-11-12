@@ -182,53 +182,40 @@ task createRcloneModule(type: Exec) {
 
 task checkoutRclone(dependsOn: createRcloneModule) {
     doLast {
-        // --- CONFIGURAZIONE REPOSITORY AUTOMATICA ---
-        def REPO_URL = "https://github.com/gulp79/rclone-extra.git"
-        // MODIFICA: Cambiato da 'android-integration' a 'master' poiché il branch vecchio non esiste.
-        // Se usi un branch diverso (es. 'main' o 'fix/qualcosa'), aggiorna questa riga.
-        def REPO_BRANCH = "master" 
+        // stash: rclone comes from gulp79/rclone-extra (rclone with the teldrive backend) at a pinned
+        // tag, v1.75.2-extra (it speaks the teldrive 1.8.x API; later releases target teldrive 2.x),
+        // plus rclone/patches/*.patch (the chunkedreader fix). Cloned next to the Go module and wired
+        // in with a local `replace`. Override with -Ptd.rcloneRepo=... / -Ptd.rcloneRef=...
+        def REPO_URL = project.findProperty('td.rcloneRepo') ?: 'https://github.com/gulp79/rclone-extra.git'
+        def REPO_REF = project.findProperty('td.rcloneRef') ?: 'v1.75.2-extra'
+        def srcDir = Paths.get(CACHE_PATH, 'rclone-extra-src').toFile()
+        def patchDir = Paths.get(projectDir.absolutePath, 'patches').toFile()
 
-        println ">>> RICERCA ULTIMO COMMIT su ${REPO_BRANCH} di ${REPO_URL}..."
-
-        // Esegui 'git ls-remote' per trovare l'hash del branch
-        def gitOutput = new ByteArrayOutputStream()
-        def gitError = new ByteArrayOutputStream() // Catturiamo anche gli errori
-        
-        try {
-            exec {
-                commandLine 'git', 'ls-remote', REPO_URL, REPO_BRANCH
-                standardOutput = gitOutput
-                errorOutput = gitError
-            }
-        } catch (Exception e) {
-            println ">>> ATTENZIONE: Errore durante git ls-remote: ${e.message}"
+        if (!new File(srcDir, '.git').exists()) {
+            srcDir.mkdirs()
+            exec { workingDir srcDir; commandLine 'git', 'init', '-q' }
+            exec { workingDir srcDir; commandLine 'git', 'remote', 'add', 'origin', REPO_URL }
         }
-        
-        // Estrai l'SHA del commit (il primo elemento della riga)
-        def outputString = gitOutput.toString().trim()
-        def latestSha = ""
-        
-        if (outputString) {
-            latestSha = outputString.split('\t')[0].trim()
+        println ">>> Updating ${srcDir} to ${REPO_REF}"
+        exec { workingDir srcDir; commandLine 'git', 'remote', 'set-url', 'origin', REPO_URL }
+        exec { workingDir srcDir; commandLine 'git', 'fetch', '--tags', 'origin', REPO_REF }
+        // Reset drops previously applied patches, so they apply cleanly again.
+        exec { workingDir srcDir; commandLine 'git', 'checkout', '-q', '-f', '--detach', 'FETCH_HEAD' }
+        exec { workingDir srcDir; commandLine 'git', 'clean', '-fdq' }
+        (patchDir.listFiles() ?: []).findAll { it.name.endsWith('.patch') }.sort { it.name }.each { patch ->
+            println ">>> applying ${patch.name}"
+            exec { workingDir srcDir; commandLine 'git', 'apply', '--whitespace=nowarn', patch.absolutePath }
         }
+        def head = new ByteArrayOutputStream()
+        exec { workingDir srcDir; commandLine 'git', 'rev-parse', '--short', 'HEAD'; standardOutput = head }
+        println ">>> rclone-extra ${REPO_REF} at ${head.toString().trim()} (+ patches)"
 
-        // MODIFICA: Gestione errore migliorata
-        if (latestSha.isEmpty()) {
-            println ">>> ERRORE GIT: ${gitError.toString()}"
-            throw new GradleException("Impossibile trovare l'hash del branch '${REPO_BRANCH}' su ${REPO_URL}.\n" +
-                "Verifica che il repository esista, sia pubblico e che il branch si chiami correttamente (es. 'master' o 'main').")
-        }
-        
-        // Creazione del target nel formato corretto (@SHA)
-        def REPO_TARGET = "github.com/gulp79/rclone-extra@${latestSha}"
-
-        println ">>> CONFIGURAZIONE BUILD CON: ${REPO_TARGET}"
-
-        // 1. Imposta il REPLACE nel go.mod
+        // 1. Local replace in go.mod
         exec {
             workingDir CACHE_PATH
             environment 'GOPATH', GOPATH
-            commandLine 'go', 'mod', 'edit', '-replace', "github.com/rclone/rclone=${REPO_TARGET}"
+            // relative path, so no local path ends up in the binary's build info
+            commandLine 'go', 'mod', 'edit', '-replace', "github.com/rclone/rclone=./rclone-extra-src"
         }
 
         // 2. Crea file Dummy per importare librclone
@@ -273,8 +260,10 @@ task buildx64(dependsOn: checkoutRclone) {
     configure buildRclone('x86_64')
 }
 
+// stash: only build the ABIs in td.abis (default arm64-v8a) to keep builds quick.
 task buildAll {
-    dependsOn buildArm, buildArm64, buildx86, buildx64
+    def abiTasks = ['armeabi-v7a': 'buildArm', 'arm64-v8a': 'buildArm64', 'x86': 'buildx86', 'x86_64': 'buildx64']
+    (project.findProperty('td.abis') ?: 'arm64-v8a').split(',').each { dependsOn abiTasks[it.trim()] }
 }
 
 task clean {

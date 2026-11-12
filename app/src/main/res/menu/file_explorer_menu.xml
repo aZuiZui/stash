@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
     <item
-        android:id="@+id/action_file_properties"
-        android:title="@string/properties"
+        android:id="@+id/action_cut"
+        android:title="Cut"
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/action_open_as"
-        android:title="@string/open_as"
+        android:id="@+id/action_copy"
+        android:title="Copy"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_send_item"
+        android:title="Send to…"
         app:showAsAction="never" />
 
     <item
@@ -28,23 +32,53 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_pin_item"
+        android:title="Pin to drawer"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_map_channel"
+        android:title="Map to Telegram channel"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_open_as"
+        android:title="@string/open_as"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_delete"
         android:title="@string/delete"
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_file_properties"
+        android:visible="false"
+        android:title="@string/properties"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_link"
+        android:visible="false"
         android:title="@string/link"
         app:showAsAction="never" />
 
     <item
         android:id="@+id/action_serve"
+        android:visible="false"
         android:title="@string/serve"
         app:showAsAction="never" />
 
     <item
         android:id="@+id/action_sync"
+        android:visible="false"
         android:title="@string/sync"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_open_in_tab"
+        android:visible="false"
+        android:title="Open in new tab"
         app:showAsAction="never" />
 
 </menu>

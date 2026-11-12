@@ -84,6 +84,8 @@ public class Rclone {
     }
 
     private String[] createCommand(ArrayList<String> args) {
+        // stash: uploads into a folder mapped to a Telegram channel go to that channel.
+        io.github.azuizui.stash.ChannelFolders.INSTANCE.rewriteCommand(context, args);
         String[] command = new String[args.size()];
         for (int i = 0; i < args.size(); i++) {
             command[i]= args.get(i);
@@ -233,6 +235,20 @@ public class Rclone {
     }
 
     @Nullable
+    private io.github.azuizui.stash.ListDaemon.Launcher listLauncher() {
+        return new io.github.azuizui.stash.ListDaemon.Launcher() {
+            @Override
+            public String[] command(String[] extra) {
+                return createCommandWithOptions(extra);
+            }
+
+            @Override
+            public String[] env() {
+                return getRcloneEnv();
+            }
+        };
+    }
+
     public List<FileItem> getDirectoryContent(RemoteItem remote, String path, boolean startAtRoot) {
         String remoteAndPath = remote.getName() + ":";
         if (startAtRoot) {
@@ -255,8 +271,19 @@ public class Rclone {
             }
         }
 
+        // stash: cloud remotes are listed through one long-running rclone (remotes stay
+        // warm between folders); phone storage and SAF keep the per-process listing.
+        JSONArray daemonResults = null;
+        if (!remote.isRemoteType(RemoteItem.LOCAL, RemoteItem.SAFW) && !remote.isPathAlias()) {
+            String fs = remote.getName() + ":" + (startAtRoot ? "/" : "");
+            String sub = (path.compareTo("//" + remote.getName()) == 0) ? "" : path;
+            daemonResults = io.github.azuizui.stash.ListDaemon.list(listLauncher(), new File(rcloneConf), fs, sub);
+        }
+
         String[] command;
-        if (remote.isRemoteType(RemoteItem.LOCAL) || remote.isPathAlias()) {
+        if (daemonResults != null) {
+            command = null;
+        } else if (remote.isRemoteType(RemoteItem.LOCAL) || remote.isPathAlias()) {
             // ignore .android_secure errors
             // ref: https://github.com/rclone/rclone/issues/3179
             command = createCommandWithOptions("--ignore-errors", "lsjson", remoteAndPath);
@@ -266,7 +293,9 @@ public class Rclone {
         String[] env = getRcloneEnv();
         JSONArray results;
         Process process = null;
-        try {
+        if (daemonResults != null) {
+            results = daemonResults;
+        } else try {
             FLog.d(TAG, "getDirectoryContent[ENV]: %s", Arrays.toString(env));
             process = getRuntimeProcess(command, env);
 
@@ -367,7 +396,11 @@ public class Rclone {
                 JSONObject remoteJSON = new JSONObject(remotesJSON.get(key).toString());
                 String type = remoteJSON.optString("type");
                 if (type.trim().isEmpty()) {
-                    Toasty.error(context, context.getResources().getString(R.string.error_retrieving_remote, key), Toast.LENGTH_SHORT, true).show();
+                    // stash: an entry without a type is left over from a failed setup. It
+                    // can't be used, isn't listed (so it can't be deleted in the UI) and made this
+                    // error show on every start - remove it from the config instead.
+                    deleteRemote(key);
+                    Toasty.info(context, "Removed incomplete remote " + key, Toast.LENGTH_LONG, true).show();
                     continue;
                 }
                 if(type.equals("webdav")){
@@ -379,10 +412,12 @@ public class Rclone {
 
                 RemoteItem newRemote = new RemoteItem(key, type);
                 if (type.equals("crypt") || type.equals("alias") || type.equals("cache")) {
-                    newRemote = getRemoteType(remotesJSON, newRemote, key, 8);
-                    if (newRemote == null) {
-                        Toasty.error(context, context.getResources().getString(R.string.error_retrieving_remote, key), Toast.LENGTH_SHORT, true).show();
-                        continue;
+                    RemoteItem resolved = getRemoteType(remotesJSON, newRemote, key, 8);
+                    // stash: an alias/crypt/cache whose target can't be resolved used to be
+                    // skipped with an error on every start - and so could never be deleted. List it
+                    // as it is instead, so it can be opened, edited or deleted.
+                    if (resolved != null) {
+                        newRemote = resolved;
                     }
                 }
 
@@ -763,7 +798,77 @@ public class Rclone {
         }
     }
 
+    /** rclone path for [path] on [remote] ("//name" = its root), e.g. "teldrive:Movies" or "Internal:/storage/emulated/0/DCIM". */
+    public String remotePathSpec(RemoteItem remote, String path) {
+        String localRemotePath = (remote.isRemoteType(RemoteItem.LOCAL) && (!remote.isAlias() && !remote.isCrypt() && !remote.isCache()))
+                ? getLocalRemotePathPrefix(remote, context) + "/" : "";
+        String root = "//" + remote.getName();
+        if (path == null || path.equals(root)) {
+            path = "";
+        } else if (path.startsWith(root + "/")) {
+            path = path.substring(root.length() + 1);
+        }
+        return remote.getName() + ":" + localRemotePath + path;
+    }
+
+    /**
+     * stash "Send to": copies [srcSpec] (any remote, including phone storage) into folder
+     * [dstPath] of [dstRemote]; a folder is copied as a folder of the same name.
+     */
+    public Process copyTo(RemoteItem dstRemote, String dstPath, String srcSpec, boolean isDir) {
+        return copyTo(dstRemote, dstPath, srcSpec, isDir, false);
+    }
+
+    /**
+     * Same as {@link #copyTo(RemoteItem, String, String, boolean)}, but with [move] the source is
+     * deleted once it has been transferred (cut and paste across remotes). A moved folder leaves its
+     * now-empty top directory behind; remove it with {@link #rmdir(String)}.
+     */
+    public Process copyTo(RemoteItem dstRemote, String dstPath, String srcSpec, boolean isDir, boolean move) {
+        String dst = remotePathSpec(dstRemote, dstPath);
+        if (isDir) {
+            String name = srcSpec.substring(Math.max(srcSpec.lastIndexOf('/'), srcSpec.indexOf(':')) + 1);
+            dst = dst + ((dst.endsWith(":") || dst.endsWith("/")) ? "" : "/") + name;
+        }
+        String[] command = move
+                ? createCommandWithOptions("move", srcSpec, dst, "--delete-empty-src-dirs", "-v", "--transfers", "1", "--stats=1s", "--stats-log-level", "NOTICE", "--use-json-log")
+                : createCommandWithOptions("copy", srcSpec, dst, "-v", "--transfers", "1", "--stats=1s", "--stats-log-level", "NOTICE", "--use-json-log");
+        try {
+            return getRuntimeProcess(command, getRcloneEnv());
+        } catch (IOException e) {
+            FLog.e(TAG, "copyTo: error starting rclone", e);
+            return null;
+        }
+    }
+
+    /** Removes the empty directory [spec] (an rclone path such as "remote:a/b"); true on success. */
+    public boolean rmdir(String spec) {
+        String[] command = createCommandWithOptions("rmdir", spec);
+        try {
+            Process process = getRuntimeProcess(command, getRcloneEnv());
+            process.waitFor();
+            if (process.exitValue() != 0) {
+                logErrorOutput(process);
+                return false;
+            }
+            return true;
+        } catch (IOException | InterruptedException e) {
+            FLog.e(TAG, "rmdir: error running rclone", e);
+            return false;
+        }
+    }
+
     public Process uploadFile(RemoteItem remote, String uploadPath, String uploadFile) {
+        return uploadFile(remote, uploadPath, uploadFile, false, false);
+    }
+
+    /**
+     * stash: [importDocs] uploads Office files as Google Docs/Sheets/Slides, so an edited copy of a
+     * native Google file (listed by rclone as .docx/.xlsx/.pptx) replaces it in place. Without it
+     * rclone can't update a Google file and the edit is lost. [explicitSave]: a file the user saved
+     * in the viewer, uploaded even if rclone thinks it is unchanged.
+     */
+    public Process uploadFile(RemoteItem remote, String uploadPath, String uploadFile, boolean importDocs, boolean explicitSave) {
         String remoteName = remote.getName();
         String path;
         String[] command;
@@ -784,7 +889,18 @@ public class Rclone {
             path = (uploadPath.compareTo("//" + remoteName) == 0) ? remoteName + ":" + localRemotePath : remoteName + ":" + localRemotePath + uploadPath;
         }
 
-        command = createCommandWithOptions("copy", uploadFile, path, "-v", "--transfers", "1", "--stats=1s", "--stats-log-level", "NOTICE", "--use-json-log");
+        List<String> args = new ArrayList<>(Arrays.asList(uploadFile, path, "-v", "--transfers", "1", "--stats=1s", "--stats-log-level", "NOTICE", "--use-json-log"));
+        if (explicitSave) {
+            // a file the user just saved is always sent: rclone would otherwise skip it when the size
+            // matches (Google files have no comparable modification time)
+            args.add("--ignore-times");
+        }
+        if (importDocs) {
+            args.add("--drive-import-formats");
+            args.add("docx,xlsx,pptx,odt,ods,odp");
+        }
+        args.add(0, "copy");
+        command = createCommandWithOptions(args.toArray(new String[0]));
 
         String[] env = getRcloneEnv();
         try {

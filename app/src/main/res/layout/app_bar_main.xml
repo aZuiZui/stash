@@ -30,7 +30,7 @@
                 android:animateLayoutChanges="false"
                 android:theme="@style/MainViewToolbar"
                 app:cardCornerRadius="@dimen/cardCornerRadius"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
                 <androidx.appcompat.widget.Toolbar
@@ -47,6 +47,33 @@
                         android:animateLayoutChanges="false"
                         android:orientation="horizontal"
                         android:visibility="visible">
+
+                        <!-- Stash: "3 selected" and select all, while files are selected -->
+                        <LinearLayout
+                            android:id="@+id/selection_bar"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="4"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:id="@+id/selection_count"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:singleLine="true"
+                                android:textSize="20sp" />
+
+                            <ImageButton
+                                android:id="@+id/selection_all"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?selectableItemBackgroundBorderless"
+                                android:contentDescription="@string/select_all"
+                                app:srcCompat="@drawable/ic_select_all" />
+                        </LinearLayout>
 
                         <LinearLayout
                             android:id="@+id/search_bar"
@@ -67,7 +94,7 @@
                                 android:imeOptions="actionSearch"
                                 android:inputType="text"
                                 android:lines="1"
-                                android:textColor="@color/white"
+                                android:textColor="?attr/colorOnSurface"
                                 android:importantForAutofill="no" />
 
                             <ImageButton
@@ -95,11 +122,27 @@
             </com.google.android.material.card.MaterialCardView>
         </FrameLayout>
 
+        <HorizontalScrollView
+            android:id="@+id/tab_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/tab_strip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp" />
+        </HorizontalScrollView>
+
         <de.felixnuesse.ui.BreadcrumbView
             android:id="@+id/breadcrumb_view"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:animateLayoutChanges="true"
+            android:animateLayoutChanges="false"
             android:layout_marginStart="2dp"
             android:layout_marginEnd="2dp"
             android:scrollbars="none"

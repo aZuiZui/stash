@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown while the Cut / Copy clipboard holds items: paste them into the folder on screen. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/paste_bar"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:layout_marginStart="8dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
+    android:layout_marginEnd="80dp"
+    tools:showIn="@layout/fragment_file_explorer_list"
+    android:visibility="gone"
+    tools:visibility="visible">
+
+    <com.google.android.material.card.MaterialCardView
+        style="@style/FileListBottomBars"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:theme="@style/FileListBottomBars"
+        app:cardCornerRadius="@dimen/cardCornerRadius"
+        app:cardElevation="2dp"
+        app:strokeWidth="0dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp"
+                android:src="@drawable/ic_content_paste" />
+
+            <TextView
+                android:id="@+id/paste_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="middle"
+                android:singleLine="true"
+                tools:text="Cut: 3 items" />
+
+            <TextView
+                android:id="@+id/paste_clear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:padding="12dp"
+                android:text="@string/cancel"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/paste_here"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="12dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="12dp"
+                android:text="Paste here"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+</FrameLayout>

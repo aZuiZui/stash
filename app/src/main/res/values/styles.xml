@@ -28,21 +28,23 @@
     <!-- Layout Styles _____ Begin -->
     <!-- Card Styles need to be applied to the card directly.-->
     <style name="MainViewToolbar">
-        <item name="cardBackgroundColor">?attr/colorPrimary</item>
-        <item name="android:textColor">?attr/colorOnSecondary</item>
-        <item name="android:tint">?attr/colorOnSecondary</item>
-        <item name="tint">?attr/colorOnSecondary</item>
-        <item name="iconTint">?attr/colorOnSecondary</item>
-        <item name="actionMenuTextColor">?attr/colorOnSecondary</item>
-        <item name="android:actionMenuTextColor">?attr/colorOnSecondary</item>
+        <item name="cardBackgroundColor">@color/searchBar</item>
+        <item name="android:textColor">@color/onSearchBar</item>
+        <item name="android:textColorHint">@color/onSearchBar</item>
+        <item name="android:tint">@color/onSearchBar</item>
+        <item name="tint">@color/onSearchBar</item>
+        <item name="iconTint">@color/onSearchBar</item>
+        <item name="colorControlNormal">@color/onSearchBar</item>
+        <item name="actionMenuTextColor">@color/onSearchBar</item>
+        <item name="android:actionMenuTextColor">@color/onSearchBar</item>
         <item name="popupTheme">@style/MainViewToolbarOverflowMenu</item>
-        <item name="android:textColorPrimary">?attr/colorOnSecondary</item>
+        <item name="android:textColorPrimary">@color/onSearchBar</item>
     </style>
 
     <style name="MainViewToolbarOverflowMenu" parent="ThemeOverlay.AppCompat.Dark.ActionBar">
-        <item name="android:colorBackground">?attr/colorSecondary</item>
-        <item name="android:textColor">?attr/colorSecondary</item>
-        <item name="android:textColorPrimary">?attr/colorSecondary</item>
+        <item name="android:colorBackground">?attr/colorSurface</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:textColorPrimary">?attr/colorOnSurface</item>
     </style>
 
     <style name="FloatingActionButtonMulti">
@@ -60,10 +62,10 @@
     </style>
 
     <style name="FileListBottomBars">
-        <item name="android:textColor">?attr/colorOnTertiary</item>
-        <item name="android:tint">?attr/colorOnTertiary</item>
-        <item name="android:background">?attr/colorTertiary</item>
-        <item name="cardBackgroundColor">?attr/colorTertiary</item>
+        <item name="android:textColor">@color/onActionBar</item>
+        <item name="android:tint">@color/onActionBar</item>
+        <item name="android:background">@color/actionBar</item>
+        <item name="cardBackgroundColor">@color/actionBar</item>
     </style>
 
     <style name="SettingsTheme">
@@ -79,6 +81,7 @@
     </style>
 
     <style name="SecondaryCardStyle">
+        <item name="cardElevation">0dp</item>
         <item name="cardBackgroundColor">?attr/colorSecondaryContainer</item>
         <item name="android:textColor">?attr/colorOnSecondaryContainer</item>
         <item name="android:tint">?attr/colorOnSecondaryContainer</item>
@@ -93,6 +96,6 @@
         <item name="cornerSize">@dimen/dialogCornerRadius</item>
     </style>
     <style name="BreadcrumbText" parent="">
-        <item name="android:textColor">@color/md_theme_light_background</item>
+        <item name="android:textColor">@color/md_theme_light_onPrimaryContainer</item>
     </style>
 </resources>

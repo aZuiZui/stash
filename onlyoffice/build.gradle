@@ -1,0 +1,52 @@
+// stash: bundles the ONLYOFFICE mobile editors (offline, no Document Server) into the APK as
+// app/src/main/assets/onlyoffice/, used by io.github.azuizui.stash.OfficeEditorActivity.
+//
+// Source: github.com/wasmtools/office-web (ONLYOFFICE 9.4 web-apps + sdkjs, self-compiled x2t.wasm
+// converter; AGPL-3.0). It is checked out at a pinned commit into onlyoffice/cache/office-web, then
+// bundle.py copies a trimmed subset (mobile editors, engine, converter, Latin fonts) and adds Stash's
+// own files from onlyoffice/stash/. Both cache/ and the generated assets are git-ignored.
+//
+// Properties (gradle.properties or -P):
+//   oo.repo     default https://github.com/wasmtools/office-web.git
+//   oo.commit   default the commit below (update deliberately, then re-test the editors)
+
+import java.nio.file.Paths
+
+ext {
+    OO_REPO = project.findProperty('oo.repo') ?: 'https://github.com/wasmtools/office-web.git'
+    OO_COMMIT = project.findProperty('oo.commit') ?: '80b7e9ebcd2b3d8b6f8208eb4f4d526739d6be5e'
+    SRC_DIR = Paths.get(projectDir.absolutePath, 'cache', 'office-web').toFile()
+    OUT_DIR = Paths.get(projectDir.absolutePath, '..', 'app', 'src', 'main', 'assets', 'onlyoffice').toFile()
+}
+
+task checkoutOfficeWeb {
+    doLast {
+        if (!new File(SRC_DIR, '.git').exists()) {
+            SRC_DIR.mkdirs()
+            exec { workingDir SRC_DIR; commandLine 'git', 'init', '-q' }
+            exec { workingDir SRC_DIR; commandLine 'git', 'remote', 'add', 'origin', OO_REPO }
+        }
+        def head = new ByteArrayOutputStream()
+        exec { workingDir SRC_DIR; commandLine 'git', 'rev-parse', '--verify', '-q', 'HEAD'; standardOutput = head; ignoreExitValue = true }
+        if (head.toString().trim() != OO_COMMIT) {
+            exec { workingDir SRC_DIR; commandLine 'git', 'remote', 'set-url', 'origin', OO_REPO }
+            exec { workingDir SRC_DIR; commandLine 'git', 'fetch', '-q', '--depth', '1', 'origin', OO_COMMIT }
+            exec { workingDir SRC_DIR; commandLine 'git', 'checkout', '-q', '-f', OO_COMMIT }
+        }
+        println ">>> office-web at ${OO_COMMIT.take(9)}"
+    }
+}
+
+// Rebuilds the trimmed bundle when the pinned commit or Stash's files change (bundle.py writes a stamp).
+task buildAll(dependsOn: checkoutOfficeWeb) {
+    inputs.dir(new File(projectDir, 'stash'))
+    inputs.file(new File(projectDir, 'bundle.py'))
+    inputs.property('commit', OO_COMMIT)
+    outputs.dir(OUT_DIR)
+    doLast {
+        exec {
+            commandLine 'python3', '-I', new File(projectDir, 'bundle.py').absolutePath,
+                SRC_DIR.absolutePath + '/web', new File(projectDir, 'stash').absolutePath, OUT_DIR.absolutePath
+        }
+    }
+}

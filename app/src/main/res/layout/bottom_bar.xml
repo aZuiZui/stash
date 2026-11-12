@@ -63,7 +63,7 @@
                 android:layout_weight="1" />
 
             <LinearLayout
-                android:id="@+id/file_move"
+                android:id="@+id/file_cut"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="?selectableItemBackgroundBorderless"
@@ -75,9 +75,9 @@
                 <ImageView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:contentDescription="@string/move"
+                    android:contentDescription="Cut"
                     android:paddingTop="6dp"
-                    android:src="@drawable/ic_folder_move" />
+                    android:src="@drawable/ic_content_cut" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -85,7 +85,39 @@
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:paddingBottom="10dp"
-                    android:text="@string/move"
+                    android:text="Cut"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@+id/file_copy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="Copy"
+                    android:paddingTop="6dp"
+                    android:src="@drawable/ic_content_copy" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="10dp"
+                    android:text="Copy"
                     android:textSize="12sp" />
             </LinearLayout>
 

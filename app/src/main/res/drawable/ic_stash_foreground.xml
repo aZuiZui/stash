@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stash logo: three stacked layers (108dp adaptive-icon canvas; artwork kept inside the 66dp safe zone) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- top layer: solid -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,31 L79,43.5 L54,56 L29,43.5 Z" />
+    <!-- middle and bottom layers: open chevrons -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M29,55 L54,67.5 L79,55" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M29,66.5 L54,79 L79,66.5" />
+</vector>

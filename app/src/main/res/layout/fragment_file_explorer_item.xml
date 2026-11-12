@@ -38,6 +38,14 @@
                 android:src="@drawable/ic_folder"
                 android:layout_gravity="center_vertical"
                 android:contentDescription="@string/file_icon" />
+            <ImageView
+                android:id="@+id/selected_icon"
+                android:layout_width="@dimen/filepicker_icon_size"
+                android:layout_height="@dimen/filepicker_icon_size"
+                android:src="@drawable/ic_check_circle_selected"
+                android:layout_gravity="center_vertical"
+                android:visibility="gone"
+                android:importantForAccessibility="no" />
         </FrameLayout>
 
         <LinearLayout

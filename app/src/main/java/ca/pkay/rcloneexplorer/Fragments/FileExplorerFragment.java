@@ -29,6 +29,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -102,6 +103,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class FileExplorerFragment extends Fragment implements   FileExplorerRecyclerViewAdapter.OnClickListener,
+        ca.pkay.rcloneexplorer.Dialogs.RemoteDestinationDialog.OnDestinationSelectedListener,
                                                                 SwipeRefreshLayout.OnRefreshListener,
                                                                 BreadcrumbView.OnClickListener,
                                                                 OpenAsDialog.OnClickListener,
@@ -182,11 +184,52 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
 
     @SuppressWarnings("unused")
     public static FileExplorerFragment newInstance(RemoteItem remoteItem) {
+        return newInstance(remoteItem, null);
+    }
+
+    /** stash: open [remoteItem] at folder [startPath] (browser path form; null = root). */
+    public static FileExplorerFragment newInstance(RemoteItem remoteItem, @Nullable String startPath) {
         FileExplorerFragment fragment = new FileExplorerFragment();
         Bundle args = new Bundle();
         args.putParcelable(ARG_REMOTE, remoteItem);
+        if (startPath != null) {
+            args.putString(ARG_START_PATH, startPath);
+        }
         fragment.setArguments(args);
         return fragment;
+    }
+
+    private static final String ARG_START_PATH = "start_path";
+    private boolean openedAtPath = false;
+
+    public String getCurrentPath() {
+        return directoryObject != null ? directoryObject.getCurrentPath() : null;
+    }
+
+    public RemoteItem getRemote() {
+        return remote;
+    }
+
+    private io.github.azuizui.stash.Places.Place currentPlace() {
+        return io.github.azuizui.stash.Places.Place.Companion.of(remoteName, directoryObject.getCurrentPath(), remote.getDisplayName());
+    }
+
+    private io.github.azuizui.stash.Places.Place placeOf(FileItem item) {
+        return new io.github.azuizui.stash.Places.Place(remoteName, item.getPath(), item.getName(), item.isDir());
+    }
+
+    private void togglePin(io.github.azuizui.stash.Places.Place place) {
+        boolean pinned = io.github.azuizui.stash.Places.togglePin(context, place);
+        Toast.makeText(context, (pinned ? "Pinned " : "Unpinned ") + place.getName(), Toast.LENGTH_SHORT).show();
+        if (context instanceof io.github.azuizui.stash.Places.Host) {
+            ((io.github.azuizui.stash.Places.Host) context).refreshPinnedPlaces();
+        }
+    }
+
+    private void openInNewTab(io.github.azuizui.stash.Places.Place place) {
+        if (context instanceof io.github.azuizui.stash.Places.Host) {
+            ((io.github.azuizui.stash.Places.Host) context).openInNewTab(place);
+        }
     }
 
     @Override
@@ -213,6 +256,12 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         String path;
         if (savedInstanceState == null) {
             path = "//" + remoteName;
+            String startPath = getArguments().getString(ARG_START_PATH);
+            if (startPath != null && !startPath.isEmpty() && !startPath.equals(path)) {
+                path = startPath;
+                openedAtPath = true;
+                buildStackFromPath(remoteName, path);
+            }
             directoryObject.setPath(path);
         } else {
             path = savedInstanceState.getString(SAVED_PATH);
@@ -237,6 +286,12 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
         sortOrder = sharedPreferences.getInt(SHARED_PREFS_SORT_ORDER, SortDialog.ALPHA_ASCENDING);
         showThumbnails = sharedPreferences.getBoolean(getString(R.string.pref_key_show_thumbnails), false);
+        // stash: previews only where they are cheap (phone storage, NAS over SMB). On cloud
+        // remotes each thumbnail downloads the whole file, which made photo folders crawl.
+        if (showThumbnails && !(remote.isRemoteType(RemoteItem.LOCAL, RemoteItem.SAFW)
+                || "smb".equalsIgnoreCase(remote.getTypeReadable()))) {
+            showThumbnails = false;
+        }
         isDarkTheme = ActivityHelper.isDarkTheme(this.getActivity());
         goToDefaultSet = sharedPreferences.getBoolean(getString(R.string.pref_key_go_to_default_set), false);
         String wrapFilenamesKey = getString(R.string.pref_key_wrap_filenames);
@@ -325,10 +380,13 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         breadcrumbView.setOnClickListener(this);
         breadcrumbView.setVisibility(View.VISIBLE);
         breadcrumbView.addCrumb(remote.getDisplayName(), "//" + remoteName);
-        if (savedInstanceState != null) {
+        if (savedInstanceState != null || openedAtPath) {
             if (!directoryObject.getCurrentPath().equals("//" + remoteName)) {
                 breadcrumbView.buildBreadCrumbsFromPath(directoryObject.getCurrentPath());
             }
+        }
+        if (context instanceof io.github.azuizui.stash.Places.Host) {
+            ((io.github.azuizui.stash.Places.Host) context).renderTabs();
         }
 
         searchBar = ((FragmentActivity) context).findViewById(R.id.search_bar);
@@ -368,6 +426,7 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
     public void onStart() {
         super.onStart();
         registerReceivers();
+        updatePasteBar();
 
         if (showThumbnails) {
             startThumbnailService();
@@ -611,14 +670,14 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
             return;
         }
 
-        menuHttpServe.setVisible(setVisible);
+        menuHttpServe.setVisible(false); // stash: simplified menu
         if (!setVisible && isInMoveMode) {
             menuSelectAll.setVisible(false);
         } else {
             menuSelectAll.setVisible(true);
         }
         if (!remote.isCrypt()) {
-            menuLink.setVisible(setVisible);
+            menuLink.setVisible(false); // stash: simplified menu
         }
         if (remote.hasTrashCan()) {
             menuEmptyTrash.setVisible(setVisible);
@@ -828,13 +887,105 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         }
     }
 
+    // --- stash "Send to": copy the selection to a folder on any other remote ---------------
+    private ArrayList<FileItem> sendItems;
+    private RemoteItem sendTarget;
+
+    private void sendTo(ArrayList<FileItem> items) {
+        if (items.isEmpty()) {
+            return;
+        }
+        List<RemoteItem> targets = new ArrayList<>();
+        for (RemoteItem r : rclone.getRemotes()) {
+            if (!r.getName().equals(remote.getName())) {
+                targets.add(r);
+            }
+        }
+        if (targets.isEmpty()) {
+            Toast.makeText(context, "No other remote to send to", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] names = new String[targets.size()];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = targets.get(i).getDisplayName();
+        }
+        new AlertDialog.Builder(context)
+                .setTitle("Send " + items.size() + (items.size() == 1 ? " item" : " items") + " to")
+                .setItems(names, (d, which) -> {
+                    sendItems = items;
+                    sendTarget = targets.get(which);
+                    new ca.pkay.rcloneexplorer.Dialogs.RemoteDestinationDialog()
+                            .setRemote(sendTarget)
+                            .setTitle(R.string.select_destination)
+                            .show(getChildFragmentManager(), "send to destination");
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    @Override
+    public void onDestinationSelected(String path) {
+        if (sendItems == null || sendTarget == null) {
+            return;
+        }
+        for (FileItem item : sendItems) {
+            EphemeralTaskManager.Companion.queueCopy(context, sendTarget,
+                    rclone.remotePathSpec(remote, item.getPath()), item.isDir(), path);
+        }
+        Toast.makeText(context, "Sending " + sendItems.size() + " to " + sendTarget.getDisplayName(), Toast.LENGTH_SHORT).show();
+        sendItems = null;
+        sendTarget = null;
+        recyclerViewAdapter.cancelSelection();
+    }
+
+    // --- Cut / Copy / Paste: an app-wide clipboard, so items can be pasted on any remote ---------
+
+    private void toClipboard(io.github.azuizui.stash.FileClipboard.Mode mode, List<FileItem> items) {
+        if (items.isEmpty()) {
+            return;
+        }
+        io.github.azuizui.stash.FileClipboard.set(mode, remote, new ArrayList<>(items));
+        recyclerViewAdapter.cancelSelection();
+        Toast.makeText(context, io.github.azuizui.stash.FileClipboard.label() + " \u2013 open a folder and tap Paste here", Toast.LENGTH_SHORT).show();
+        updatePasteBar();
+    }
+
+    private void pasteHere() {
+        String message = io.github.azuizui.stash.FileClipboard.paste(context, remote, directoryObject.getCurrentPath());
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
+        updatePasteBar();
+    }
+
+    /** Shows the paste bar while the clipboard holds items and nothing is being selected or moved. */
+    private void updatePasteBar() {
+        if (context == null) {
+            return;
+        }
+        View pasteBar = ((FragmentActivity) context).findViewById(R.id.paste_bar);
+        if (pasteBar == null) {
+            return;
+        }
+        boolean show = !io.github.azuizui.stash.FileClipboard.isEmpty()
+                && !isInMoveMode && !recyclerViewAdapter.isInSelectMode();
+        if (show) {
+            ((TextView) pasteBar.findViewById(R.id.paste_label)).setText(io.github.azuizui.stash.FileClipboard.label());
+        }
+        pasteBar.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
     private void setBottomBarClickListeners(final View view) {
         view.findViewById(R.id.file_download).setOnClickListener(v -> {
             downloadList = new ArrayList<>(recyclerViewAdapter.getSelectedItems());
             downloadFiles();
         });
 
-        view.findViewById(R.id.file_move).setOnClickListener(v -> moveFiles(recyclerViewAdapter.getSelectedItems()));
+        view.findViewById(R.id.file_cut).setOnClickListener(v -> toClipboard(io.github.azuizui.stash.FileClipboard.Mode.CUT, recyclerViewAdapter.getSelectedItems()));
+        view.findViewById(R.id.file_copy).setOnClickListener(v -> toClipboard(io.github.azuizui.stash.FileClipboard.Mode.COPY, recyclerViewAdapter.getSelectedItems()));
+        view.findViewById(R.id.paste_here).setOnClickListener(v -> pasteHere());
+        view.findViewById(R.id.paste_clear).setOnClickListener(v -> {
+            io.github.azuizui.stash.FileClipboard.clear();
+            updatePasteBar();
+        });
 
         view.findViewById(R.id.file_rename).setOnClickListener(v -> {
             renameItem = recyclerViewAdapter.getSelectedItems().get(0);
@@ -903,6 +1054,7 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         showNavDrawerButtonInToolbar();
         setOptionsMenuVisibility(true);
         recyclerViewAdapter.refreshData();
+        updatePasteBar();
 
         if (moveStartPath != null && !moveStartPath.equals(directoryObject.getCurrentPath())) {
             if (fetchDirectoryTask != null) {
@@ -937,6 +1089,7 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         recyclerViewAdapter.refreshData();
         isInMoveMode = false;
         showNavDrawerButtonInToolbar();
+        updatePasteBar();
         if (moveList.size() < 1) {
             Toasty.error(context, getString(R.string.error_moving_file), Toast.LENGTH_SHORT, true).show();
             moveList.clear();
@@ -1113,6 +1266,11 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         }
         breadcrumbView.clearCrumbs();
         breadcrumbView.setVisibility(View.GONE);
+        View tabBar = ((FragmentActivity) context).findViewById(R.id.tab_bar);
+        if (tabBar != null) {
+            tabBar.setVisibility(View.GONE);
+        }
+        hideSelectionBar();
         searchBar.setVisibility(View.INVISIBLE);
         ((FragmentActivity) context).setTitle(originalToolbarTitle);
         showNavDrawerButtonInToolbar();
@@ -1175,6 +1333,18 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
 
     @Override
     public void onFileClicked(FileItem fileItem) {
+        // stash: built-in viewer (swipe through the folder's files)
+        List<FileItem> files = new ArrayList<>();
+        for (FileItem f : directoryObject.getDirectoryContent()) {
+            if (!f.isDir()) {
+                files.add(f);
+            }
+        }
+        int index = files.indexOf(fileItem);
+        if (index >= 0) {
+            io.github.azuizui.stash.ViewerActivity.open(context, remote, directoryObject.getCurrentPath(), files, index);
+            return;
+        }
         String type = fileItem.getMimeType();
         if (type.startsWith("video/") || type.startsWith("audio/")) {
             // stream video or audio
@@ -1231,7 +1401,9 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
 
         if (numOfSelected > 0) { // something is selected
             ((FragmentActivity) context).setTitle(numOfSelected + " " + getString(R.string.selected));
+            showSelectionBar(numOfSelected);
             showBottomBar();
+            updatePasteBar();
             fab.hide();
             fab.setVisibility(View.INVISIBLE);
             setFabBehaviour(false);
@@ -1247,16 +1419,50 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         }
     }
 
+    /** The toolbar does not show its title, so the count goes in a bar of its own, with select all. */
+    private void showSelectionBar(int count) {
+        if (context == null) {
+            return;
+        }
+        FragmentActivity activity = (FragmentActivity) context;
+        View bar = activity.findViewById(R.id.selection_bar);
+        if (bar == null) {
+            return;
+        }
+        android.widget.TextView label = activity.findViewById(R.id.selection_count);
+        label.setText(count + " " + getString(R.string.selected));
+        activity.findViewById(R.id.selection_all).setOnClickListener(v -> recyclerViewAdapter.toggleSelectAll());
+        bar.setVisibility(View.VISIBLE);
+        if (searchBar != null) {
+            searchBar.setVisibility(View.GONE);
+        }
+    }
+
+    private void hideSelectionBar() {
+        if (context == null) {
+            return;
+        }
+        View bar = ((FragmentActivity) context).findViewById(R.id.selection_bar);
+        if (bar != null && bar.getVisibility() == View.VISIBLE) {
+            bar.setVisibility(View.GONE);
+            if (searchBar != null) {
+                searchBar.setVisibility(View.INVISIBLE);
+            }
+        }
+    }
+
     @Override
     public void onFileDeselected() {
         if (!isInMoveMode && !recyclerViewAdapter.isInSelectMode()) {
             setTitle();
+            hideSelectionBar();
             hideBottomBar();
             fab.show();
             fab.setVisibility(View.VISIBLE);
             setFabBehaviour(true);
             setOptionsMenuVisibility(true);
             showNavDrawerButtonInToolbar();
+            updatePasteBar();
         } else {
             handleFilesSelected();
         }
@@ -1316,6 +1522,12 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
                     downloadList.add(fileItem);
                     downloadFiles();
                     break;
+                case R.id.action_cut:
+                    toClipboard(io.github.azuizui.stash.FileClipboard.Mode.CUT, Collections.singletonList(fileItem));
+                    break;
+                case R.id.action_copy:
+                    toClipboard(io.github.azuizui.stash.FileClipboard.Mode.COPY, Collections.singletonList(fileItem));
+                    break;
                 case R.id.action_move:
                     moveFiles(Collections.singletonList(fileItem));
                     break;
@@ -1332,6 +1544,18 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
                 case R.id.action_sync:
                     showSyncDialog(fileItem.getPath());
                     break;
+                case R.id.action_send_item:
+                    sendTo(new ArrayList<>(Collections.singletonList(fileItem)));
+                    break;
+                case R.id.action_pin_item:
+                    togglePin(placeOf(fileItem));
+                    break;
+                case R.id.action_open_in_tab:
+                    openInNewTab(placeOf(fileItem));
+                    break;
+                case R.id.action_map_channel:
+                    io.github.azuizui.stash.ChannelFoldersActivity.mapFolder(requireActivity(), fileItem.getPath());
+                    break;
                 default:
                     return false;
             }
@@ -1343,6 +1567,11 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         } else {
             popupMenu.getMenu().findItem(R.id.action_sync).setVisible(false);
         }
+        popupMenu.getMenu().findItem(R.id.action_pin_item).setTitle(
+                io.github.azuizui.stash.Places.isPinned(context, placeOf(fileItem)) ? "Unpin from drawer" : "Pin to drawer");
+        // teldrive only: which Telegram channel uploads into this folder go to
+        popupMenu.getMenu().findItem(R.id.action_map_channel).setVisible(
+                fileItem.isDir() && io.github.azuizui.stash.TeldriveRemotes.ROOT.equals(remote.getName()));
         if (!remote.hasSyncSupport()) {
             // TODO: remove once destination sync is added.
             popupMenu.getMenu().findItem(R.id.action_sync).setVisible(false);
@@ -1505,6 +1734,7 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
         showCancelButtonInToolbar();
         ((FragmentActivity) context).setTitle(getString(R.string.select_destination));
         ((FragmentActivity) context).findViewById(R.id.move_bar).setVisibility(View.VISIBLE);
+        updatePasteBar();
         setOptionsMenuVisibility(false);
         fab.hide();
         fab.setVisibility(View.INVISIBLE);
@@ -1662,6 +1892,9 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
 
             directoryObject.setContent(fileItems);
             sortDirectory();
+            if (context instanceof io.github.azuizui.stash.Places.Host) {
+                ((io.github.azuizui.stash.Places.Host) context).renderTabs();
+            }
 
             if (isSearchMode && searchString != null) {
                 searchDirContent(searchString);
@@ -1923,7 +2156,14 @@ public class FileExplorerFragment extends Fragment implements   FileExplorerRecy
             fileItem = fileItems[0];
             int port = allocatePort(8080, true);
             serveIntent = new Intent(context, StreamingService.class);
-            serveIntent.putExtra(StreamingService.SERVE_PATH_ARG, fileItem.getPath());
+            // Serve the file's folder, not the file: `serve http remote:dir/file` relies on the
+            // backend reporting "this root is a file", which some don't (TeraBox: empty listing,
+            // so the stream never became available and no player opened).
+            String filePath = fileItem.getPath();
+            int slash = filePath.lastIndexOf('/');
+            String parentPath = slash > 0 ? filePath.substring(0, slash) : "";
+            serveIntent.putExtra(StreamingService.SERVE_PATH_ARG,
+                    parentPath.isEmpty() ? "//" + remote.getName() : parentPath);
             serveIntent.putExtra(StreamingService.REMOTE_ARG, remote);
             serveIntent.putExtra(StreamingService.SHOW_NOTIFICATION_TEXT, false);
             serveIntent.putExtra(StreamingService.SERVE_PORT, port);

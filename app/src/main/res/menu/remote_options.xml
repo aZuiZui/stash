@@ -3,6 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/action_pin"
+        android:visible="false"
         android:title="@string/pin_to_the_top" />
 
     <item
@@ -23,9 +24,11 @@
 
     <item
             android:id="@+id/action_remote_properties"
+        android:visible="false"
             android:title="@string/properties" />
 
     <item
         android:id="@+id/action_add_to_home_screen"
+        android:visible="false"
         android:title="@string/add_to_home_screen" />
 </menu>

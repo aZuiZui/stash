@@ -21,16 +21,19 @@
 
     <item
         android:id="@+id/action_link"
+        android:visible="false"
         android:title="@string/link"
         app:showAsAction="never" />
 
     <item
         android:id="@+id/action_serve"
+        android:visible="false"
         android:title="@string/serve"
         app:showAsAction="never" />
 
     <item
         android:id="@+id/action_sync"
+        android:visible="false"
         android:title="@string/sync"
         app:showAsAction="never" />
 

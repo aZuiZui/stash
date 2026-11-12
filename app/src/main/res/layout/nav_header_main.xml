@@ -22,7 +22,7 @@
             android:gravity="bottom"
             android:paddingTop="@dimen/nav_header_vertical_spacing"
             android:text="@string/app_name"
-            android:textColor="@color/md_theme_dark_onPrimary"
+            android:textColor="?attr/colorOnPrimaryContainer"
             android:textStyle="bold" />
 
         <Space
@@ -37,9 +37,9 @@
             android:contentDescription="@string/app_icon"
             android:elevation="2dp"
             android:paddingTop="@dimen/nav_header_vertical_spacing"
-            app:srcCompat="@drawable/appicon"
-            app:iconTint="@color/md_theme_dark_onPrimary"
-            app:tint="@color/md_theme_dark_onPrimary" />
+            app:srcCompat="@drawable/ic_stash_header"
+            app:iconTint="?attr/colorOnPrimaryContainer"
+            app:tint="?attr/colorOnPrimaryContainer" />
     </LinearLayout>
 
     <TextView
@@ -47,6 +47,6 @@
         android:layout_height="wrap_content"
         android:paddingTop="@dimen/nav_header_vertical_spacing"
         android:text="@string/app_description"
-        android:textColor="@color/md_theme_dark_onPrimary" />
+        android:textColor="?attr/colorOnPrimaryContainer" />
 
 </LinearLayout>

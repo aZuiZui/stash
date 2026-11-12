@@ -1,0 +1,125 @@
+// Builds the teldrive server for Android as app/lib/<abi>/libteldrive.so: upstream teldrive at a
+// pinned tag (1.8.3) plus patches/*.patch, applied in name order (0000 = Stash's changes to 1.8.3).
+// The app runs it as a local server on 127.0.0.1 against your teldrive Postgres DB; it is packaged
+// as a "lib*.so" so Android extracts it executable, the same trick Round-Sync uses for librclone.so.
+// teldrive 2.x is not supported: its backend and API differ (see README).
+//
+// Properties (gradle.properties or -P):
+//   td.teldriveRepo    default https://github.com/tgdrive/teldrive.git
+//   td.teldriveRef     tag, branch or commit to build (default 1.8.3)
+//   td.uiZip           teldrive-ui release zip (default: tgdrive latest, as in teldrive's Taskfile)
+//   td.abis            ABIs to build, comma separated (default arm64-v8a)
+
+import java.nio.file.Paths
+
+ext {
+    NDK_VERSION = project.properties['de.felixnuesse.extract.ndkVersion']
+    NDK_TOOLCHAIN_VERSION = project.properties['de.felixnuesse.extract.ndkToolchainVersion']
+    TD_REPO = project.findProperty('td.teldriveRepo') ?: 'https://github.com/tgdrive/teldrive.git'
+    TD_REF = project.findProperty('td.teldriveRef') ?: '1.8.3'
+    TD_UI_ZIP = project.findProperty('td.uiZip') ?: 'https://github.com/tgdrive/teldrive-ui/releases/download/latest/teldrive-ui.zip'
+    TD_ABIS = (project.findProperty('td.abis') ?: 'arm64-v8a').split(',').collect { it.trim() }
+    SRC_DIR = Paths.get(projectDir.absolutePath, 'cache', 'src').toFile()
+    PATCH_DIR = Paths.get(projectDir.absolutePath, 'patches').toFile()
+    OUTPUT_BASE_PATH = Paths.get(projectDir.absolutePath, '..', 'app', 'lib').toAbsolutePath().toString()
+}
+
+def sdkDir() {
+    def env = System.getenv('ANDROID_HOME')
+    if (env) return env
+    def lp = rootProject.file('local.properties')
+    if (lp.exists()) {
+        def p = new Properties(); lp.withInputStream { p.load(it) }
+        if (p.get('sdk.dir')) return p.get('sdk.dir')
+    }
+    throw new GradleException('Set ANDROID_HOME or sdk.dir in local.properties')
+}
+
+def crossCompiler(abi) {
+    def osName = System.properties['os.name']
+    def host = osName.startsWith('Windows') ? 'windows-x86_64' : osName.startsWith('Mac') ? 'darwin-x86_64' : 'linux-x86_64'
+    def cc = [
+        'armeabi-v7a': "armv7a-linux-androideabi${NDK_TOOLCHAIN_VERSION}-clang",
+        'arm64-v8a'  : "aarch64-linux-android${NDK_TOOLCHAIN_VERSION}-clang",
+        'x86'        : "i686-linux-android${NDK_TOOLCHAIN_VERSION}-clang",
+        'x86_64'     : "x86_64-linux-android${NDK_TOOLCHAIN_VERSION}-clang",
+    ][abi]
+    def path = Paths.get(sdkDir(), 'ndk', NDK_VERSION, 'toolchains', 'llvm', 'prebuilt', host, 'bin', cc).toFile()
+    if (!path.exists()) throw new GradleException("NDK compiler not found: ${path} (install ndk;${NDK_VERSION})")
+    return path.absolutePath
+}
+
+task checkoutTeldrive {
+    doLast {
+        if (!new File(SRC_DIR, '.git').exists()) {
+            SRC_DIR.mkdirs()
+            exec { workingDir SRC_DIR; commandLine 'git', 'init', '-q' }
+            exec { workingDir SRC_DIR; commandLine 'git', 'remote', 'add', 'origin', TD_REPO }
+        }
+        exec { workingDir SRC_DIR; commandLine 'git', 'remote', 'set-url', 'origin', TD_REPO }
+        exec { workingDir SRC_DIR; commandLine 'git', 'fetch', '--tags', 'origin', TD_REF }
+        // Reset drops the previously applied patches too, so they apply cleanly again.
+        exec { workingDir SRC_DIR; commandLine 'git', 'checkout', '-q', '-f', '--detach', 'FETCH_HEAD' }
+        // Patches may add new files; drop those too (ignored files such as ui/dist are kept).
+        exec { workingDir SRC_DIR; commandLine 'git', 'clean', '-fdq' }
+        PATCH_DIR.listFiles().findAll { it.name.endsWith('.patch') }.sort { it.name }.each { patch ->
+            println ">>> applying ${patch.name}"
+            exec { workingDir SRC_DIR; commandLine 'git', 'apply', '--whitespace=nowarn', patch.absolutePath }
+        }
+        def head = new ByteArrayOutputStream()
+        exec { workingDir SRC_DIR; commandLine 'git', 'rev-parse', '--short', 'HEAD'; standardOutput = head }
+        println ">>> teldrive ${TD_REF} at ${head.toString().trim()} (+ ${PATCH_DIR.list().length} patch(es))"
+    }
+}
+
+task prepareTeldrive(dependsOn: checkoutTeldrive) {
+    doLast {
+        // Generated ogen API code (internal/api) is not in git.
+        exec { workingDir SRC_DIR; commandLine 'go', 'generate', '.' }
+        // UI assets embedded via //go:embed all:dist
+        def dist = new File(SRC_DIR, 'ui/dist')
+        if (!new File(dist, 'index.html').exists()) {
+            exec { workingDir SRC_DIR; commandLine 'go', 'run', 'scripts/extract.go', '-url', TD_UI_ZIP, '-output', 'ui/dist' }
+        }
+    }
+}
+
+def buildTeldrive(abi) {
+    def goArch = [
+        'armeabi-v7a': ['GOARCH': 'arm', 'GOARM': '7'],
+        'arm64-v8a'  : ['GOARCH': 'arm64'],
+        'x86'        : ['GOARCH': '386'],
+        'x86_64'     : ['GOARCH': 'amd64'],
+    ][abi]
+    return tasks.create("buildTeldrive_${abi.replace('-', '_')}") {
+        dependsOn prepareTeldrive
+        doLast {
+            def ver = new ByteArrayOutputStream()
+            exec { workingDir SRC_DIR; commandLine 'git', 'describe', '--tags', '--always'; standardOutput = ver }
+            exec {
+                workingDir SRC_DIR
+                def cc = crossCompiler(abi)
+                environment 'CC', cc
+                environment 'GOOS', 'android'
+                environment 'CGO_ENABLED', '1'   // cgo = Android's own DNS resolver (no /etc/resolv.conf there)
+                environment 'CGO_LDFLAGS', '-fuse-ld=lld -Wl,--hash-style=both -s'
+                goArch.each { k, v -> environment k, v }
+                commandLine 'go', 'build', '-trimpath',
+                    '-ldflags', "-s -w -buildid= -X github.com/tgdrive/teldrive/internal/version.Version=${ver.toString().trim()}-stash-apk",
+                    '-o', Paths.get(OUTPUT_BASE_PATH, abi, 'libteldrive.so').toString(), '.'
+            }
+        }
+    }
+}
+
+task buildAll {
+    TD_ABIS.each { dependsOn buildTeldrive(it) }
+}
+
+task clean {
+    doLast {
+        delete fileTree(OUTPUT_BASE_PATH).matching { include '**/libteldrive.so' }
+    }
+}
+
+defaultTasks 'buildAll'

@@ -1,0 +1,65 @@
+diff --git a/cmd/run.go b/cmd/run.go
+index 692ef65..ef7e172 100644
+--- a/cmd/run.go
++++ b/cmd/run.go
+@@ -63,9 +63,9 @@ func NewRun() *cobra.Command {
+ 	return cmd
+ }
+ 
+-func findAvailablePort(startPort int) (int, error) {
++func findAvailablePort(host string, startPort int) (int, error) {
+ 	for port := startPort; port < startPort+100; port++ {
+-		addr := fmt.Sprintf(":%d", port)
++		addr := fmt.Sprintf("%s:%d", host, port)
+ 		listener, err := net.Listen("tcp", addr)
+ 		if err != nil {
+ 			continue
+@@ -95,7 +95,7 @@ func runApplication(ctx context.Context, conf *config.ServerCmdConfig) {
+ 		LogLevel: conf.Log.Level,
+ 	})
+ 
+-	port, err := findAvailablePort(conf.Server.Port)
++	port, err := findAvailablePort(conf.Server.Host, conf.Server.Port)
+ 	if err != nil {
+ 		lg.Error("failed to find available port", zap.Error(err))
+ 		os.Exit(1)
+@@ -156,7 +156,9 @@ func runApplication(ctx context.Context, conf *config.ServerCmdConfig) {
+ 		os.Exit(1)
+ 	}
+ 
+-	if err := database.MigrateDB(db); err != nil {
++	if !conf.DB.Migrate {
++		lg.Info("database migrations skipped (db.migrate = false)")
++	} else if err := database.MigrateDB(db); err != nil {
+ 		lg.Error("failed to migrate database", zap.Error(err))
+ 		os.Exit(1)
+ 	}
+@@ -311,7 +313,7 @@ func setupServer(cfg *config.ServerCmdConfig, db *gorm.DB, cache cache.Cacher, l
+ 	mux.Handle("/*", middleware.SPAHandler(ui.StaticFS))
+ 
+ 	return &http.Server{
+-		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
++		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+ 		Handler:           mux,
+ 		ReadTimeout:       cfg.Server.ReadTimeout,
+ 		WriteTimeout:      cfg.Server.WriteTimeout,
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 015f8c2..a78d23d 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -87,6 +87,7 @@ type BotsCmdConfig struct {
+ }
+ 
+ type ServerConfig struct {
++	Host             string        `default:"" description:"Address to listen on (empty = all interfaces)"`
+ 	Port             int           `default:"8080" description:"HTTP port for the server to listen on"`
+ 	GracefulShutdown time.Duration `default:"10s" description:"Grace period for server shutdown"`
+ 	EnablePprof      bool          `default:"false" description:"Enable pprof debugging endpoints"`
+@@ -158,6 +159,7 @@ type DBPool struct {
+ type DBConfig struct {
+ 	DataSource  string `validate:"required" default:"" description:"Database connection string"`
+ 	PrepareStmt bool   `default:"true" description:"Use prepared statements"`
++	Migrate     bool   `default:"true" description:"Run database migrations at startup (off for clients sharing another server's DB)"`
+ 	Pool        DBPool
+ }
+ 

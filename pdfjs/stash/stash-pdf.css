@@ -1,0 +1,16 @@
+/* stash: PDF.js inside Stash's editor. The app draws its own top and bottom bars (Google Drive
+   style), so the viewer's toolbar goes; its dialogs (signature, image, alt text) still work. */
+#toolbarContainer, #viewsManager, #sidebarContainer, #secondaryToolbar, #findbar, #loadingBar,
+#editorUndoBar, .toolbar { display: none !important; }
+#outerContainer, #mainContainer { --toolbar-height: 0px; }
+#viewerContainer { top: 0 !important; inset-block-start: 0 !important; }
+body, #mainContainer, #viewerContainer { background: #F0F4F9 !important; }
+.pdfViewer .page { box-shadow: 0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15) !important;
+                   border: 0 !important; margin: 12px auto !important; }
+/* form fields: Drive-like light blue, easy to spot and tap */
+.annotationLayer .textWidgetAnnotation :is(input, textarea),
+.annotationLayer .choiceWidgetAnnotation select,
+.annotationLayer .buttonWidgetAnnotation:is(.checkBox, .radioButton) input {
+    background-color: rgba(194, 231, 255, .55) !important;
+}
+dialog { font-family: Roboto, sans-serif; border-radius: 24px !important; }

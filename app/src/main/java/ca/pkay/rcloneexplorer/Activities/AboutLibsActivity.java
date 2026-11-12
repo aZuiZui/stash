@@ -128,11 +128,46 @@ public class AboutLibsActivity extends AppCompatActivity implements AboutLibrari
         libraryLicenceUrls.put(rfc3339, "https://github.com/x0b/rfc3339parser/blob/master/LICENSE");
 
 
+        // stash: the projects Stash is built from and the components it bundles
+        addLibrary("RCX by x0b", "https://github.com/x0b/rcx",
+                "Licensed under GPL-3.0", "https://github.com/x0b/rcx/blob/master/LICENSE");
+        addLibrary("Round Sync by Felix Nüsse", "https://github.com/newhinton/Round-Sync",
+                "Licensed under GPL-3.0", "https://github.com/newhinton/Round-Sync/blob/master/LICENSE");
+        addLibrary("Round-Sync (rclone-extra fork) by gulp79", "https://github.com/gulp79/Round-Sync",
+                "Licensed under GPL-3.0", "https://github.com/gulp79/Round-Sync/blob/master/LICENSE");
+        addLibrary("rclone-extra by gulp79", "https://github.com/gulp79/rclone-extra",
+                "Licensed under MIT", "https://github.com/gulp79/rclone-extra/blob/master/COPYING");
+        addLibrary("teldrive by divyam234 (tgdrive)", "https://github.com/tgdrive/teldrive",
+                "Licensed under MIT", "https://github.com/tgdrive/teldrive/blob/0c0a5d0fbe648039360003f84c4dbd121477160e/LICENSE");
+        addLibrary("teldrive-ui by tgdrive", "https://github.com/tgdrive/teldrive-ui",
+                "Licensed under GPL-3.0", "https://github.com/tgdrive/teldrive-ui/blob/main/LICENSE");
+        addLibrary("ONLYOFFICE editors by Ascensio System SIA (modified)", "https://github.com/ONLYOFFICE",
+                "Licensed under AGPL-3.0 with additional terms", "https://www.gnu.org/licenses/agpl-3.0.html");
+        addLibrary("office-web by wasmtools", "https://github.com/wasmtools/office-web",
+                "Licensed under AGPL-3.0", "https://github.com/wasmtools/office-web/blob/main/LICENSE");
+        addLibrary("PDF.js by Mozilla", "https://github.com/mozilla/pdf.js",
+                "Licensed under Apache-2.0", "https://github.com/mozilla/pdf.js/blob/master/LICENSE");
+        addLibrary("docx-preview by Volodymyr Baydalka", "https://github.com/VolodymyrBaydalka/docxjs",
+                "Licensed under Apache-2.0", "https://github.com/VolodymyrBaydalka/docxjs/blob/master/LICENSE");
+        addLibrary("SheetJS Community Edition", "https://sheetjs.com",
+                "Licensed under Apache-2.0", "https://www.apache.org/licenses/LICENSE-2.0");
+        addLibrary("JSZip by Stuart Knightley", "https://github.com/Stuk/jszip",
+                "Licensed under MIT or GPL-3.0", "https://github.com/Stuk/jszip/blob/main/LICENSE.markdown");
+        addLibrary("AndroidX Media3", "https://github.com/androidx/media",
+                "Licensed under Apache-2.0", "https://github.com/androidx/media/blob/release/LICENSE");
+
         String undraw = "unDraw - Open Source Illustrations";
         libraryNames.add(undraw);
         libraryUrls.put(undraw, "https://undraw.co/");
         libraryLicences.put(undraw, "Licensed under Custom License");
         libraryLicenceUrls.put(undraw, "https://undraw.co/license");
+    }
+
+    private void addLibrary(String name, String url, String licence, String licenceUrl) {
+        libraryNames.add(name);
+        libraryUrls.put(name, url);
+        libraryLicences.put(name, licence);
+        libraryLicenceUrls.put(name, licenceUrl);
     }
 
     @Override

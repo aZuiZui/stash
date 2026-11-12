@@ -1,0 +1,261 @@
+chunkedreader: a parallel stream that ends early fails the read instead of hanging.
+Applies to rclone-extra v1.75.2-extra (gulp79/rclone-extra, tag v1.75.2-extra = 56bf1388).
+
+diff --git a/fs/chunkedreader/parallel.go b/fs/chunkedreader/parallel.go
+index a76d8915c..2dea856df 100644
+--- a/fs/chunkedreader/parallel.go
++++ b/fs/chunkedreader/parallel.go
+@@ -40,6 +40,8 @@ type stream struct {
+ 	readBytes int64           // bytes read from the stream
+ 	rw        *pool.RW        // buffer for read
+ 	err       chan error      // error returned from the read
++	done      chan struct{}   // closed when readFrom has stopped: nothing more will be written to rw
++	doneErr   error           // readFrom's error, readable once done is closed
+ 	name      string          // name of this stream for debugging
+ }
+ 
+@@ -57,6 +59,7 @@ func (cr *parallel) newStream(ctx context.Context, offset, size int64) (s *strea
+ 		size:   size,
+ 		rw:     rw,
+ 		err:    make(chan error, 1),
++		done:   make(chan struct{}),
+ 	}
+ 	s.name = fmt.Sprintf("stream(%d,%d,%p)", s.offset, s.size, s)
+ 
+@@ -75,7 +78,7 @@ func (s *stream) readFrom(ctx context.Context) {
+ 		&fs.HashesOption{Hashes: hash.Set(hash.None)},
+ 		&fs.RangeOption{Start: s.offset, End: s.offset + s.size - 1})
+ 	if err != nil {
+-		s.err <- fmt.Errorf("parallel chunked reader: failed to open stream at %d size %d: %w", s.offset, s.size, err)
++		s.finish(fmt.Errorf("parallel chunked reader: failed to open stream at %d size %d: %w", s.offset, s.size, err))
+ 		return
+ 	}
+ 	s.rc = rc
+@@ -83,9 +86,34 @@ func (s *stream) readFrom(ctx context.Context) {
+ 	fs.Debugf(s.cr.o, "%s: readfrom started", s.name)
+ 	_, err = s.rw.ReadFrom(s.rc)
+ 	fs.Debugf(s.cr.o, "%s: readfrom finished (%d bytes): %v", s.name, s.rw.Size(), err)
++	s.finish(err)
++}
++
++// finish records readFrom's result: for close (s.err) and for readers waiting on data (s.done).
++func (s *stream) finish(err error) {
++	s.doneErr = err
++	close(s.done)
+ 	s.err <- err
+ }
+ 
++// finished reports whether readFrom has stopped, and its error.
++func (s *stream) finished() (bool, error) {
++	select {
++	case <-s.done:
++		return true, s.doneErr
++	default:
++		return false, nil
++	}
++}
++
++// shortErr is the error for a stream whose download stopped before its range was complete.
++func (s *stream) shortErr(err error) error {
++	if err == nil || err == io.EOF {
++		err = io.ErrUnexpectedEOF
++	}
++	return fmt.Errorf("parallel chunked reader: stream at %d size %d stopped after %d bytes: %w", s.offset, s.size, s.rw.Size(), err)
++}
++
+ // eof is true when we've read all the data we are expecting
+ func (s *stream) eof() bool {
+ 	return s.readBytes >= s.size
+@@ -101,6 +129,8 @@ func (s *stream) read(p []byte) (n int, err error) {
+ 		return n, nil
+ 	}
+ 	for {
++		// Sampled before the read: once done, everything readFrom wrote is visible to it.
++		done, doneErr := s.finished()
+ 		var nn int
+ 		nn, err = s.rw.Read(p[n:])
+ 		fs.Debugf(s.cr.o, "%s: rw.Read nn=%d, err=%v", s.name, nn, err)
+@@ -116,6 +146,14 @@ func (s *stream) read(p []byte) (n int, err error) {
+ 		if n >= len(p) {
+ 			break
+ 		}
++		// The download stopped short of the range (the server closed the response early):
++		// no more writes will come, so waiting for one would hang the read for good.
++		if done && nn == 0 {
++			if n > 0 {
++				return n, nil // the next read reports it
++			}
++			return n, s.shortErr(doneErr)
++		}
+ 		// Wait for a write to happen to read more
+ 		s.rw.WaitWrite(s.ctx)
+ 	}
+@@ -263,9 +301,11 @@ func (cr *parallel) Read(p []byte) (n int, err error) {
+ 			return n, io.EOF
+ 		}
+ 
+-		// Read from the stream
++		// Read from the stream (err is the function's: a ":=" here shadowed it, so a stream's
++		// error was dropped and Read returned 0, nil for good)
+ 		stream := cr.streams[0]
+-		nn, err := stream.read(p[n:])
++		var nn int
++		nn, err = stream.read(p[n:])
+ 		n += nn
+ 		cr.offset += int64(nn)
+ 		if err == io.EOF {
+@@ -363,6 +403,13 @@ func (cr *parallel) Seek(offset int64, whence int) (int64, error) {
+ 	fs.Debugf(cr.o, "parallel chunked reader: seek the current stream to %d", streamOffset)
+ 	// Wait for the read to the correct part of the data
+ 	for stream.rw.Size() < streamOffset {
++		if done, _ := stream.finished(); done && stream.rw.Size() < streamOffset {
++			// Its download stopped before reaching the new offset: start again from there.
++			_ = cr._popStreams()
++			fs.Debugf(cr.o, "parallel chunked reader: current stream stopped before the new offset - ditch all")
++			cr.endStream = cr.offset
++			return cr.offset, nil
++		}
+ 		stream.rw.WaitWrite(cr.ctx)
+ 	}
+ 	_, err := stream.rw.Seek(streamOffset, io.SeekStart)
+diff --git a/fs/chunkedreader/parallel_short_test.go b/fs/chunkedreader/parallel_short_test.go
+new file mode 100644
+index 000000000..272e305eb
+--- /dev/null
++++ b/fs/chunkedreader/parallel_short_test.go
+@@ -0,0 +1,135 @@
++package chunkedreader
++
++import (
++	"context"
++	"errors"
++	"io"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fstest/mockobject"
++	"github.com/rclone/rclone/lib/multipart"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// shortObject is a mock object whose downloads end early: each opened range returns only its
++// first `keep` bytes, then EOF or err (a server that closed the response half way).
++type shortObject struct {
++	*mockobject.ContentMockObject
++	keep     int64
++	err      error
++	maxOpens int32 // > 0: opens after this many fail (the server is gone, so reopening can't help)
++	opens    atomic.Int32
++}
++
++type shortReader struct {
++	io.ReadCloser
++	left int64
++	err  error
++}
++
++func (r *shortReader) Read(p []byte) (int, error) {
++	if r.left <= 0 {
++		return 0, r.err
++	}
++	if int64(len(p)) > r.left {
++		p = p[:r.left]
++	}
++	n, err := r.ReadCloser.Read(p)
++	r.left -= int64(n)
++	return n, err
++}
++
++func (o *shortObject) Open(ctx context.Context, options ...fs.OpenOption) (io.ReadCloser, error) {
++	if n := o.opens.Add(1); o.maxOpens > 0 && n > o.maxOpens {
++		return nil, errors.New("server gone")
++	}
++	rc, err := o.ContentMockObject.Open(ctx, options...)
++	if err != nil {
++		return nil, err
++	}
++	return &shortReader{ReadCloser: rc, left: o.keep, err: o.err}, nil
++}
++
++// A stream whose download ends before its range is complete must fail the read, not wait
++// for data that will never come (Plex's scanner hung in D state for 30 minutes on a mount).
++func TestParallelShortStreamFails(t *testing.T) {
++	for _, tc := range []struct {
++		name     string
++		err      error
++		maxOpens int32
++		complete bool // rclone's reopen gets the rest
++	}{
++		{name: "response ends early without an error", err: io.EOF},
++		{name: "unexpected EOF, reopen fails", err: io.ErrUnexpectedEOF, maxOpens: 2},
++		{name: "unexpected EOF, reopen works", err: io.ErrUnexpectedEOF, complete: true},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			ctx := context.Background()
++			const chunkSize = multipart.BufferSize
++			content := makeContent(t, 4*chunkSize)
++			o := &shortObject{
++				ContentMockObject: mockobject.New("short.bin").WithContent(content, mockobject.SeekModeNone),
++				keep:              chunkSize / 2,
++				err:               tc.err,
++				maxOpens:          tc.maxOpens,
++			}
++			cr := New(ctx, o, chunkSize, 0, 2)
++			done := make(chan error, 1)
++			var got []byte
++			go func() {
++				var err error
++				got, err = io.ReadAll(cr)
++				done <- err
++			}()
++			select {
++			case err := <-done:
++				if tc.complete {
++					require.NoError(t, err)
++					assert.Equal(t, content, got)
++				} else {
++					require.Error(t, err)
++					assert.Equal(t, content[:len(got)], got, "what was read is the file's data")
++					assert.Less(t, len(got), len(content))
++				}
++			case <-time.After(10 * time.Second):
++				t.Fatal("read still waiting 10 s after the download ended early")
++			}
++			_ = cr.Close()
++		})
++	}
++}
++
++// Seeking into the part of a stream its (short) download never reached restarts there.
++func TestParallelSeekPastShortStream(t *testing.T) {
++	ctx := context.Background()
++	const chunkSize = multipart.BufferSize
++	content := makeContent(t, 4*chunkSize)
++	o := &shortObject{
++		ContentMockObject: mockobject.New("short.bin").WithContent(content, mockobject.SeekModeNone),
++		keep:              chunkSize / 2,
++		err:               io.ErrUnexpectedEOF,
++	}
++	cr := New(ctx, o, chunkSize, 0, 2)
++	buf := make([]byte, 16)
++	_, err := io.ReadFull(cr, buf) // starts the streams
++	require.NoError(t, err)
++	done := make(chan error, 1)
++	go func() {
++		_, err := cr.Seek(chunkSize-100, io.SeekStart) // past the 1/2 chunk the stream got
++		done <- err
++	}()
++	select {
++	case err := <-done:
++		require.NoError(t, err)
++	case <-time.After(10 * time.Second):
++		t.Fatal("seek still waiting 10 s after the download ended early")
++	}
++	n, err := io.ReadFull(cr, buf)
++	require.NoError(t, err)
++	assert.Equal(t, content[chunkSize-100:chunkSize-100+n], buf[:n])
++	require.NoError(t, cr.Close())
++}

@@ -39,6 +39,17 @@ public class StreamingService extends IntentService {
     private final int PERSISTENT_NOTIFICATION_ID = 179;
     private Rclone rclone;
     private Process runningProcess;
+    // The serve process of the previous stream. rclone shuts down gracefully on SIGTERM and waits
+    // for in-flight reads, which can hang while teldrive is still logging a bot in; that blocked
+    // the next stream behind it ("Please wait" forever). Always kill it outright.
+    private static Process lastProcess;
+
+    private static synchronized void killLast() {
+        if (lastProcess != null && lastProcess.isAlive()) {
+            lastProcess.destroyForcibly();
+        }
+        lastProcess = null;
+    }
 
     /**
      * Creates an IntentService.  Invoked by your subclass's constructor.*
@@ -96,6 +107,8 @@ public class StreamingService extends IntentService {
 
         startForeground(PERSISTENT_NOTIFICATION_ID, builder.build());
 
+        killLast();
+
         switch (protocol) {
             case SERVE_FTP:
                 runningProcess = rclone.serve(Rclone.SERVE_PROTOCOL_FTP, port, allowRemoteAccess, authenticationUsername, authenticationPassword, remote, servePath);
@@ -113,6 +126,7 @@ public class StreamingService extends IntentService {
         }
 
         if (runningProcess != null) {
+            synchronized (StreamingService.class) { lastProcess = runningProcess; }
             try {
                 runningProcess.waitFor();
             } catch (InterruptedException e) {
@@ -131,8 +145,9 @@ public class StreamingService extends IntentService {
     public void onDestroy() {
         super.onDestroy();
         if (null != runningProcess) {
-            runningProcess.destroy();
+            runningProcess.destroyForcibly();
         }
+        killLast();
     }
 
     private void setNotificationChannel() {

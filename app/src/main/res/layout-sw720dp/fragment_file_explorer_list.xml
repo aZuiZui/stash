@@ -75,4 +75,15 @@
         android:focusable="true"
         layout="@layout/move_bar"/>
 
+    <include
+        android:id="@+id/paste_bar"
+        android:layout_width="600dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|center"
+        android:elevation="8dp"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        layout="@layout/paste_bar"/>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

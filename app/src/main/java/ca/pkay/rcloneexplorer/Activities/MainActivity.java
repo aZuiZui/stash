@@ -87,6 +87,7 @@ public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener,
         RemotesFragment.OnRemoteClickListener,
         RemotesFragment.AddRemoteToNavDrawer,
+        io.github.azuizui.stash.Places.Host,
         InputDialog.OnPositive {
 
     private static final String TAG = "MainActivity";
@@ -106,6 +107,9 @@ public class MainActivity extends AppCompatActivity
     private Context context;
     private HashMap<Integer, RemoteItem> drawerPinnedRemoteIds;
     private int availableDrawerPinnedRemoteId;
+    // stash: folders/files pinned to the drawer (menu id -> place)
+    private final HashMap<Integer, io.github.azuizui.stash.Places.Place> drawerPinnedPlaceIds = new HashMap<>();
+    private static final int PINNED_PLACE_ID_BASE = 50000;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,6 +123,15 @@ public class MainActivity extends AppCompatActivity
         if(!allPermissionsGranted || !completedIntroOnce) {
             startActivity(new Intent(this, OnboardingActivity.class));
             finish();
+        }
+        // stash: DB + Telegram login first, then keep the local teldrive server running.
+        else if (!io.github.azuizui.stash.TeldriveServer.INSTANCE.isSetUp(this)) {
+            startActivity(new Intent(this, io.github.azuizui.stash.TeldriveSetupActivity.class));
+            finish();
+        } else {
+            io.github.azuizui.stash.TeldriveServer.INSTANCE.pruneOldRemotesOnce(this);
+            io.github.azuizui.stash.ChannelFolders.INSTANCE.seedOnce(this);
+            io.github.azuizui.stash.TeldriveService.Companion.start(this);
         }
 
 
@@ -135,6 +148,11 @@ public class MainActivity extends AppCompatActivity
         }
 
         drawer = findViewById(R.id.drawer_layout);
+        // Stash: the status bar takes the page colour (Google Drive style), not the primary blue
+        android.util.TypedValue bg = new android.util.TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.colorBackground, bg, true)) {
+            drawer.setStatusBarBackgroundColor(bg.data);
+        }
         navigationView = findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
 
@@ -360,6 +378,18 @@ public class MainActivity extends AppCompatActivity
             startPinnedRemote(drawerPinnedRemoteIds.get(id));
             return true;
         }
+        if (drawerPinnedPlaceIds.containsKey(id)) {
+            openPlace(drawerPinnedPlaceIds.get(id));
+            return true;
+        }
+
+        // stash: folder -> channel mapping screen
+        if (id == R.id.nav_channel_folders) {
+            startActivity(new Intent(this, io.github.azuizui.stash.ChannelFoldersActivity.class));
+            DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
+            drawerLayout.closeDrawer(GravityCompat.START);
+            return true;
+        }
 
         // set the last used fragment on each call.
         switch (id) {
@@ -478,6 +508,223 @@ public class MainActivity extends AppCompatActivity
                 menuItem.setIcon(remoteItem.getRemoteIcon());
             }
         }
+
+        // stash: pinned folders and files
+        drawerPinnedPlaceIds.clear();
+        int placeId = PINNED_PLACE_ID_BASE;
+        for (io.github.azuizui.stash.Places.Place place : io.github.azuizui.stash.Places.pins(this)) {
+            RemoteItem owner = null;
+            for (RemoteItem r : remoteItems) {
+                if (r.getName().equals(place.getRemote())) {
+                    owner = r;
+                }
+            }
+            if (owner == null) {
+                continue; // remote was deleted
+            }
+            MenuItem menuItem = subMenu.add(R.id.nav_pinned, placeId, Menu.NONE,
+                    place.getName() + "  ·  " + owner.getDisplayName());
+            menuItem.setIcon(place.isDir() ? R.drawable.ic_folder : R.drawable.ic_file);
+            drawerPinnedPlaceIds.put(placeId, place);
+            placeId++;
+        }
+    }
+
+    // --- stash: pinned places and tabs -------------------------------------------------
+
+    @Override
+    public void refreshPinnedPlaces() {
+        addRemoteToNavDrawer();
+    }
+
+    private RemoteItem findRemote(String name) {
+        for (RemoteItem r : rclone.getRemotes()) {
+            if (r.getName().equals(name)) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    /** Opens [place]'s folder; the back stack goes back to the remotes list. */
+    private void openPlace(io.github.azuizui.stash.Places.Place place) {
+        RemoteItem remoteItem = findRemote(place.getRemote());
+        if (remoteItem == null) {
+            Toast.makeText(this, "Remote " + place.getRemote() + " no longer exists", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        for (int i = 0; i < fragmentManager.getBackStackEntryCount(); i++) {
+            fragmentManager.popBackStack();
+        }
+        if (!(fragment instanceof RemotesFragment)) {
+            startRemotesFragment();
+        }
+        fragment = FileExplorerFragment.newInstance(remoteItem, place.folder());
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.flFragment, fragment, FILE_EXPLORER_FRAGMENT_TAG)
+                .addToBackStack(null)
+                .commitAllowingStateLoss();
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
+        drawer.closeDrawer(GravityCompat.START);
+    }
+
+    /** Where the open file browser is now, as a place (null when none is open). */
+    private io.github.azuizui.stash.Places.Place currentBrowserPlace() {
+        if (!(fragment instanceof FileExplorerFragment)) {
+            return null;
+        }
+        FileExplorerFragment f = (FileExplorerFragment) fragment;
+        if (f.getRemote() == null || f.getCurrentPath() == null) {
+            return null;
+        }
+        return io.github.azuizui.stash.Places.Place.Companion.of(f.getRemote().getName(), f.getCurrentPath(), f.getRemote().getDisplayName());
+    }
+
+    /** Remembers where the active tab is before switching away from it. */
+    private void saveActiveTabLocation() {
+        List<io.github.azuizui.stash.Places.Place> tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        int active = io.github.azuizui.stash.Places.activeTab(this);
+        io.github.azuizui.stash.Places.Place here = currentBrowserPlace();
+        if (here != null && active >= 0 && active < tabs.size()) {
+            tabs.set(active, here);
+            io.github.azuizui.stash.Places.saveTabs(this, tabs, active);
+        }
+    }
+
+    @Override
+    public void openInNewTab(io.github.azuizui.stash.Places.Place place) {
+        io.github.azuizui.stash.Places.Place target = place.isDir() ? place
+                : io.github.azuizui.stash.Places.Place.Companion.of(place.getRemote(), place.folder(), place.getRemote());
+        List<io.github.azuizui.stash.Places.Place> tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        io.github.azuizui.stash.Places.Place here = currentBrowserPlace();
+        if (tabs.isEmpty() && here != null) {
+            tabs.add(here); // the current location becomes the first tab
+        } else {
+            saveActiveTabLocation();
+            tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        }
+        tabs.add(target);
+        io.github.azuizui.stash.Places.saveTabs(this, tabs, tabs.size() - 1);
+        openPlace(target);
+    }
+
+    private void switchToTab(int index) {
+        saveActiveTabLocation();
+        List<io.github.azuizui.stash.Places.Place> tabs = io.github.azuizui.stash.Places.tabs(this);
+        if (index < 0 || index >= tabs.size()) {
+            return;
+        }
+        io.github.azuizui.stash.Places.saveTabs(this, tabs, index);
+        openPlace(tabs.get(index));
+    }
+
+    private void closeTab(int index) {
+        saveActiveTabLocation();
+        List<io.github.azuizui.stash.Places.Place> tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        if (index < 0 || index >= tabs.size()) {
+            return;
+        }
+        int active = io.github.azuizui.stash.Places.activeTab(this);
+        tabs.remove(index);
+        if (tabs.isEmpty()) {
+            renderTabs();
+            return;
+        }
+        int newActive = index < active ? active - 1 : Math.min(active, tabs.size() - 1);
+        io.github.azuizui.stash.Places.saveTabs(this, tabs, newActive);
+        if (index == active) {
+            openPlace(tabs.get(newActive));
+        } else {
+            renderTabs();
+        }
+    }
+
+    @Override
+    public void renderTabs() {
+        View bar = findViewById(R.id.tab_bar);
+        android.widget.LinearLayout strip = findViewById(R.id.tab_strip);
+        if (bar == null || strip == null) {
+            return;
+        }
+        io.github.azuizui.stash.Places.Place here = currentBrowserPlace();
+        if (here == null) {
+            bar.setVisibility(View.GONE);
+            return;
+        }
+        // keep the active tab pointing at where the browser is now
+        List<io.github.azuizui.stash.Places.Place> tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        int active = io.github.azuizui.stash.Places.activeTab(this);
+        if (tabs.isEmpty()) {
+            tabs.add(here);
+            active = 0;
+        } else {
+            active = Math.max(0, Math.min(active, tabs.size() - 1));
+            tabs.set(active, here);
+        }
+        io.github.azuizui.stash.Places.saveTabs(this, tabs, active);
+
+        strip.removeAllViews();
+        float density = getResources().getDisplayMetrics().density;
+        int pad = (int) (10 * density);
+        for (int i = 0; i < tabs.size(); i++) {
+            final int index = i;
+            boolean isActive = i == active;
+            android.widget.LinearLayout tab = new android.widget.LinearLayout(this);
+            tab.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+            tab.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            tab.setPadding(pad, pad / 2, tabs.size() > 1 ? pad / 2 : pad, pad / 2);
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+            bg.setCornerRadius(16 * density);
+            bg.setColor(androidx.core.content.ContextCompat.getColor(this, isActive ? R.color.tabActive : R.color.tabIdle));
+            tab.setBackground(bg);
+            android.widget.TextView label = new android.widget.TextView(this);
+            label.setText(tabs.get(i).getName());
+            label.setMaxWidth((int) (150 * density));
+            label.setSingleLine(true);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            if (isActive) {
+                label.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+            }
+            tab.addView(label);
+            if (tabs.size() > 1) {
+                android.widget.TextView close = new android.widget.TextView(this);
+                close.setText("  ✕");
+                close.setPadding(pad / 2, 0, pad / 2, 0);
+                close.setOnClickListener(v -> closeTab(index));
+                tab.addView(close);
+            }
+            tab.setOnClickListener(v -> {
+                if (index != io.github.azuizui.stash.Places.activeTab(this)) {
+                    switchToTab(index);
+                }
+            });
+            android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins((int) (3 * density), (int) (4 * density), (int) (3 * density), (int) (4 * density));
+            strip.addView(tab, lp);
+        }
+        // "+": new tab at the current folder
+        android.widget.TextView plus = new android.widget.TextView(this);
+        plus.setText("+");
+        plus.setTextSize(18);
+        plus.setIncludeFontPadding(false);
+        plus.setGravity(android.view.Gravity.CENTER);
+        plus.setPadding(pad, pad / 2, pad, pad / 2);
+        plus.setContentDescription("New tab");
+        plus.setOnClickListener(v -> {
+            io.github.azuizui.stash.Places.Place p = currentBrowserPlace();
+            if (p != null) {
+                openInNewTab(p);
+            }
+        });
+        android.widget.LinearLayout.LayoutParams plp = new android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        plp.gravity = android.view.Gravity.CENTER_VERTICAL;
+        plp.setMargins((int) (3 * density), (int) (4 * density), (int) (3 * density), (int) (4 * density));
+        strip.addView(plus, plp);
+        strip.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        bar.setVisibility(View.VISIBLE);
     }
 
     public void startRemotesFragment() {
@@ -588,6 +835,12 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onRemoteClick(RemoteItem remote) {
+        List<io.github.azuizui.stash.Places.Place> tabs = new ArrayList<>(io.github.azuizui.stash.Places.tabs(this));
+        int active = io.github.azuizui.stash.Places.activeTab(this);
+        if (tabs.size() >= 2 && active >= 0 && active < tabs.size()) {
+            tabs.set(active, io.github.azuizui.stash.Places.Place.Companion.root(remote.getName(), remote.getDisplayName()));
+            io.github.azuizui.stash.Places.saveTabs(this, tabs, active);
+        }
         startRemote(remote, true);
     }
 

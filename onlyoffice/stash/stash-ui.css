@@ -1,0 +1,61 @@
+/* stash: Google Docs / Sheets look for the ONLYOFFICE mobile editors. Stash draws the top bar
+   (done, undo, redo, menu) and the formatting bar itself, so ONLYOFFICE's own toolbar and logo go. */
+
+:root {
+    --brand-word: #0B57D0;
+    --brand-cell: #0B57D0;
+    --brand-slide: #0B57D0;
+    --brand-primary: #0B57D0;
+    --f7-theme-color: #0B57D0;
+    --f7-theme-color-rgb: 11, 87, 208;
+}
+html, body, .md, .ios {
+    font-family: Roboto, "Google Sans", system-ui, sans-serif !important;
+}
+
+/* no ONLYOFFICE toolbar, title or logo in the main view (popups and sheets keep theirs) */
+.view-main .navbar,
+.view-main .subnavbar,
+.view-main .navbar-bg,
+.skl-container {
+    display: none !important;
+}
+.view-main .page {
+    --f7-navbar-height: 0px;
+    --f7-subnavbar-height: 0px;
+    --f7-page-navbar-offset: 0px;
+    --f7-page-subnavbar-offset: 0px;
+}
+.view-main .page-content {
+    padding-top: 0 !important;
+}
+
+/* sheet tabs: a light bar with the current sheet as a pill, like Google Sheets */
+.statusbar {
+    background: #F0F4F9 !important;
+    border-top: none !important;
+    box-shadow: none !important;
+}
+.statusbar .tab,
+.statusbar .tab a {
+    border: none !important;
+    background: transparent !important;
+    color: #444746 !important;
+}
+.statusbar .tab.active,
+.statusbar .tab.active a {
+    background: #C2E7FF !important;
+    border-radius: 18px !important;
+    color: #001D35 !important;
+    font-weight: 500 !important;
+}
+
+/* cell editing line: flat */
+#idx-celleditor,
+#idx-celleditor * {
+    box-shadow: none !important;
+}
+#idx-celleditor {
+    background: #FFFFFF !important;
+    border-bottom: 1px solid #E1E3E1 !important;
+}

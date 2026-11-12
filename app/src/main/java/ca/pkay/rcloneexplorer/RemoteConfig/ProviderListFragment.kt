@@ -57,7 +57,8 @@ class ProviderListFragment(private val mPreselection: String?) : Fragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mRclone = Rclone(this.context)
-        mProviders = mRclone?.providers ?: listOf()
+        // stash: teldrive plus Google Drive, TeraBox and SMB (local/alias kept for on-device paths).
+        mProviders = (mRclone?.providers ?: listOf()).filter { it.name in setOf("teldrive", "drive", "terabox", "smb", "local", "alias") }
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {

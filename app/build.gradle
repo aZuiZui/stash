@@ -50,6 +50,23 @@ def resolveVersionCode() {
     return 420
 }
 
+// stash: settings baked in at build time from your teldrive config (scripts/gen-teldrive-secrets.py ->
+// teldrive.properties) and, optionally, your own Google OAuth client for Drive remotes
+// (google.properties: gdrive.clientId / gdrive.clientSecret). Both files are git-ignored.
+def tdProps = new Properties()
+def tdPropsFile = rootProject.file('teldrive.properties')
+if (tdPropsFile.exists()) {
+    tdPropsFile.withInputStream { tdProps.load(it) }
+} else {
+    logger.warn("teldrive.properties missing: run scripts/gen-teldrive-secrets.py (app will build without teldrive settings)")
+}
+def googleProps = rootProject.file('google.properties')
+if (googleProps.exists()) {
+    googleProps.withInputStream { tdProps.load(it) }
+}
+def tdField = { String key -> "\"" + (tdProps.getProperty(key, '')).replace('\\', '\\\\').replace('"', '\\"') + "\"" }
+def tdAbis = (project.findProperty('td.abis') ?: 'arm64-v8a').split(',').collect { it.trim() }
+
 android {
 signingConfigs {
         release {
@@ -84,8 +101,8 @@ signingConfigs {
     defaultConfig {
         generatedDensities = []
         vectorDrawables.generatedDensities = []
-        applicationId 'de.felixnuesse.extract'
-        minSdkVersion 23
+        applicationId project.findProperty('appId') ?: 'io.github.azuizui.stash'
+        minSdkVersion 35 // stash: Android 15+ only
         compileSdk 34
         targetSdkVersion 35
         versionCode resolveVersionCode() // last digit is reserved for ABI, base code must end in 0!
@@ -93,7 +110,19 @@ signingConfigs {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "java.lang.String", "CLI", System.getenv('RCX_BUILD_CLI') ? System.getenv('RCX_BUILD_CLI') : "\"c03129b6-b09f-9cb4-8fcd-7f143b8f94ef\""
         buildConfigField "java.lang.String", "VCP_AUTHORITY", "\"" + applicationId + ".vcp\"";
-        setProperty("archivesBaseName",  "roundsync_v"+versionName)
+        setProperty("archivesBaseName",  "stash_v"+versionName)
+        [
+            'TD_APP_ID': 'td.appId', 'TD_APP_HASH': 'td.appHash', 'TD_APP_VERSION': 'td.appVersion',
+            'TD_DEVICE_MODEL': 'td.deviceModel', 'TD_SYSTEM_VERSION': 'td.systemVersion', 'TD_LANG_PACK': 'td.langPack',
+            'TD_JWT_SECRET': 'td.jwtSecret', 'TD_ALLOWED_USERS': 'td.allowedUsers',
+            'TD_UPLOADS_ENCRYPTION_KEY': 'td.uploadsEncryptionKey',
+            'TD_DB_HOST': 'td.dbHost', 'TD_DB_PORT': 'td.dbPort', 'TD_DB_NAME': 'td.dbName', 'TD_DB_PARAMS': 'td.dbParams',
+            'TD_RCLONE_ENCRYPT_FILES': 'td.rcloneEncryptFiles',
+            'TD_RCLONE_CHUNK_SIZE': 'td.rcloneChunkSize', 'TD_RCLONE_UPLOAD_CONCURRENCY': 'td.rcloneUploadConcurrency',
+            'TD_RCLONE_RANDOM_CHUNK_NAME': 'td.rcloneRandomChunkName',
+            'TD_CHANNEL_FOLDERS': 'td.channelFolders',
+            'TD_GDRIVE_CLIENT_ID': 'gdrive.clientId', 'TD_GDRIVE_CLIENT_SECRET': 'gdrive.clientSecret',
+        ].each { field, key -> buildConfigField "java.lang.String", field, tdField(key) }
 
         externalNativeBuild {
             ndkBuild {
@@ -150,8 +179,8 @@ signingConfigs {
         abi {
             enable true
             reset()
-            include 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
-            universalApk true
+            include(*tdAbis)
+            universalApk false
         }
     }
 
@@ -192,8 +221,8 @@ signingConfigs {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-DEBUG"
             buildConfigField "java.lang.String", "VCP_AUTHORITY", "\"" + defaultConfig.applicationId + ".debug.vcp\"";
-            resValue("string", "app_name", "RS Debug")
-            resValue("string", "app_short_name", "RS Debug")
+            resValue("string", "app_name", "Stash Debug")
+            resValue("string", "app_short_name", "Stash Debug")
         }
     }
 
@@ -205,7 +234,13 @@ signingConfigs {
     }
 
     gradle.projectsEvaluated {
-        preBuild.dependsOn(':rclone:buildAll')
+        preBuild.dependsOn(':rclone:buildAll', ':teldrive:buildAll', ':onlyoffice:buildAll', ':pdfjs:buildAll')
+        // app/lib/*.so are written by the Go builds. On /mnt/c (WSL drvfs) Gradle misses those
+        // changes and kept packaging a stale libteldrive.so, so always re-merge native libs.
+        // Same for assets (the viewer pages, the ONLYOFFICE bundle): edits were not packaged.
+        tasks.matching { it.name ==~ /(merge\w*JniLibFolders|merge\w*NativeLibs|strip\w*DebugSymbols|merge\w*Assets)/ }.configureEach {
+            outputs.upToDateWhen { false }
+        }
     }
 
     namespace 'ca.pkay.rcloneexplorer'
@@ -256,6 +291,11 @@ dependencies {
 
     // Thumbnails
     implementation 'com.github.bumptech.glide:glide:4.16.0'
+    // stash: built-in viewer (video/audio, zoomable images, swipe between files)
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
+    implementation 'androidx.viewpager2:viewpager2:1.1.0'
+    implementation 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
     implementation 'androidx.preference:preference:1.2.1'
     annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'

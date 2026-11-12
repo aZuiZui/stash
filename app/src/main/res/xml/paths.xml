@@ -3,4 +3,6 @@
     <external-cache-path
         name="external_cache"
         path="." />
+    <cache-path name="viewer" path="viewer/"/>
+    <cache-path name="open" path="open/"/>
 </paths>

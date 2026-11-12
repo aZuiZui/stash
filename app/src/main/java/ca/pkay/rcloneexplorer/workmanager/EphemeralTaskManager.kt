@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import java.util.UUID
 import ca.pkay.rcloneexplorer.Items.FileItem
 import ca.pkay.rcloneexplorer.Items.RemoteItem
 import de.felixnuesse.extract.notifications.implementations.DeleteWorkerNotification
@@ -35,11 +36,14 @@ class EphemeralTaskManager(private var mContext: Context) {
             EphemeralTaskManager(context).work(data.build(), "")
         }
 
+        @JvmOverloads
         fun queueUpload(
             context: Context,
             remote: RemoteItem,
             file: String,
-            targetpath: String) {
+            targetpath: String,
+            importDocs: Boolean = false,
+            explicitSave: Boolean = false): UUID {
 
             UploadWorkerNotification(context).generateChannels()
 
@@ -49,6 +53,60 @@ class EphemeralTaskManager(private var mContext: Context) {
 
             data.putString(EphemeralWorker.UPLOAD_TARGETPATH, targetpath)
             data.putString(EphemeralWorker.UPLOAD_FILE, file)
+            data.putBoolean(EphemeralWorker.UPLOAD_IMPORT_DOCS, importDocs)
+            data.putBoolean(EphemeralWorker.UPLOAD_EXPLICIT_SAVE, explicitSave)
+
+            return EphemeralTaskManager(context).work(data.build(), "")
+        }
+
+        /** "Send to": copy [sourceSpec] (rclone path on any remote) into [targetpath] of [remote]. */
+        fun queueCopy(
+            context: Context,
+            remote: RemoteItem,
+            sourceSpec: String,
+            isDir: Boolean,
+            targetpath: String) {
+
+            UploadWorkerNotification(context).generateChannels()
+
+            val data = Data.Builder()
+            data.putString(EphemeralWorker.EPHEMERAL_TYPE, Type.UPLOAD.name)
+            addRemoteItemToData(EphemeralWorker.REMOTE, remote, data)
+
+            data.putString(EphemeralWorker.UPLOAD_TARGETPATH, targetpath)
+            data.putString(EphemeralWorker.UPLOAD_FILE, sourceSpec)
+            data.putString(EphemeralWorker.UPLOAD_SOURCE_SPEC, sourceSpec)
+            data.putBoolean(EphemeralWorker.UPLOAD_SOURCE_IS_DIR, isDir)
+
+            EphemeralTaskManager(context).work(data.build(), "")
+        }
+
+        /**
+         * Cut and paste across remotes: move [sourceSpec] (rclone path on [sourceRemoteName]) into
+         * [targetpath] of [remote]. [sourceParent] is the folder it came from, refreshed when done.
+         */
+        fun queueCrossMove(
+            context: Context,
+            remote: RemoteItem,
+            sourceSpec: String,
+            isDir: Boolean,
+            targetpath: String,
+            sourceRemoteName: String,
+            sourceParent: String) {
+
+            MoveWorkerNotification(context).generateChannels()
+
+            val data = Data.Builder()
+            data.putString(EphemeralWorker.EPHEMERAL_TYPE, Type.UPLOAD.name)
+            addRemoteItemToData(EphemeralWorker.REMOTE, remote, data)
+
+            data.putString(EphemeralWorker.UPLOAD_TARGETPATH, targetpath)
+            data.putString(EphemeralWorker.UPLOAD_FILE, sourceSpec)
+            data.putString(EphemeralWorker.UPLOAD_SOURCE_SPEC, sourceSpec)
+            data.putBoolean(EphemeralWorker.UPLOAD_SOURCE_IS_DIR, isDir)
+            data.putBoolean(EphemeralWorker.UPLOAD_IS_MOVE, true)
+            data.putString(EphemeralWorker.UPLOAD_SOURCE_REMOTE, sourceRemoteName)
+            data.putString(EphemeralWorker.UPLOAD_SOURCE_PARENT, sourceParent)
 
             EphemeralTaskManager(context).work(data.build(), "")
         }
@@ -107,11 +165,13 @@ class EphemeralTaskManager(private var mContext: Context) {
     }
 
 
-    protected fun work(inputData: Data, tag: String) {
+    protected fun work(inputData: Data, tag: String): UUID {
         val uploadWorkRequest = OneTimeWorkRequestBuilder<EphemeralWorker>()
         uploadWorkRequest.setInputData(inputData)
         uploadWorkRequest.addTag(tag)
-        WorkManager.getInstance(mContext).enqueue(uploadWorkRequest.build())
+        val request = uploadWorkRequest.build()
+        WorkManager.getInstance(mContext).enqueue(request)
+        return request.id
     }
 
     fun cancel() {

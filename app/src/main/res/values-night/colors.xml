@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stash: Google Drive look, dark -->
+<resources>
+    <color name="searchBar">#282A2C</color>
+    <color name="onSearchBar">#C4C7C5</color>
+    <color name="actionBar">#004A77</color>
+    <color name="onActionBar">#C2E7FF</color>
+    <color name="tabActive">#004A77</color>
+    <color name="tabIdle">#1E1F20</color>
+    <color name="selectedItem">#4D004A77</color>
+</resources>
